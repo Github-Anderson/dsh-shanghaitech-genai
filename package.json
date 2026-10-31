@@ -1,6 +1,6 @@
 {
   "name": "dsh-shanghaitech-genai",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "ShanghaiTech GenAI Plugin for DSH: model access, session options, attachments and native tools.",
   "private": true,
   "license": "MIT",

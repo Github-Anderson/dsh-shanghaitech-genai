@@ -4,7 +4,7 @@ const {gatewayBaseUrl}=require('./gateway-url.cjs');
 const {uploadedFilePart}=require('./attachment-routing.cjs');
 const {conversationId,usageOf,collectMetadata,sourceText,replayState}=require('./gateway-contract.cjs');
 // Configured context capacities; retain the existing fallback for other models.
-const CONTEXT_WINDOWS = Object.freeze({'GPT-6.1-Terra':1050000,'GPT-6-Astra':1050000,'GPT-6-Luna':1050000,'chatglm':128*1024,'qwen-instruct':256*1024,'Kimi-k3':200*1024,'deepseek-pro':1024*1024});
+const CONTEXT_WINDOWS = Object.freeze({'GPT-6.1-Terra':1050000,'gpt-6-astra':1050000,'GPT-6-Luna':1050000,'chatglm':128*1024,'qwen-instruct':256*1024,'Kimi-k3':200*1024,'deepseek-pro':1024*1024});
 function imageTarget(ref) { return {width:ref.width,height:ref.height,maxBytes:1024*1024}; }
 async function messagesOf(options,ctx,ErrorType=Error,imageHelpers={}) {
   const messages=[];

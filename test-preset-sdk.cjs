@@ -34,7 +34,7 @@ async function main(){
  const testHome=path.resolve(__dirname,'../../../../artifacts/preset-test-home');
  const installed=await createRuntimeResolution({installAnchor:path.join(sdkRoot,'package.json'),home:testHome});
  const profileDir=path.resolve(pluginDir,'..');
- const resolution=new ProfileRuntimeResolution({installAnchor:path.join(sdkRoot,'package.json'),profileDir,home:testHome},{...installed,profileDir,localPackageNames:['dsh-shanghaitech-genai'],entries:[...installed.entries,{name:'dsh-shanghaitech-genai',packageDir:pluginDir,scope:'profile',version:'1.0.0'}]});
+ const resolution=new ProfileRuntimeResolution({installAnchor:path.join(sdkRoot,'package.json'),profileDir,home:testHome},{...installed,profileDir,localPackageNames:['dsh-shanghaitech-genai'],entries:[...installed.entries,{name:'dsh-shanghaitech-genai',packageDir:pluginDir,scope:'profile',version:'1.0.1'}]});
  const packages=new PluginPackages(root,{resolution});
  let captured,dispose;let disposed=false;
  try{
