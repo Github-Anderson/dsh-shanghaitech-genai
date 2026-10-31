@@ -4,6 +4,14 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const root=process.argv[2];
 if(!root)throw Error('Pass the installed DSH SDK directory.');
+const manifest=require('./package.json');
+const sdkVersion=require(path.join(root,'dsh-llm','package.json')).version;
+assert.equal(manifest.engines.dsh,'>=0.2.1-rc.2');
+for(const name of ['dsh-llm','dsh-session','dsh-agent-preset-registry']) {
+  const installed=require(path.join(root,name,'package.json')).version;
+  assert.equal(installed,sdkVersion,`Mixed DSH SDK versions (${name}).`);
+  assert.equal(manifest.peerDependencies['@deepseek-ai/'+name],manifest.engines.dsh);
+}
 const llm=require(path.join(root,'dsh-llm'));
 const {Session,appendPluginRecord}=require(path.join(root,'dsh-session'));
 const {installConnection}=require(path.join(root,'dsh-client-connection/lib/client.node.js'));
@@ -24,6 +32,6 @@ async function main(){
   assert.equal(session.snapshotEvents().at(-1).ignorable,true);
   const restored=Session.create('sdk-test',session.snapshotEvents(),session.header);assert.equal(restored.snapshotEvents().find(e=>e.type==='plugin:shanghaitech-genai/options').data.search,true);
   const adapter=createAdapter(llm,host,ctx);assert(adapter instanceof llm.LlmAdapter);assert.equal(adapter.providerRetryPolicy().maxRetries,0);assert.equal((await adapter.resolveModel('shanghaitech-genai','Kimi-k3')).reasoning,undefined);
-  console.log('PASS: installed DSH SDK exports, real Session plugin record restore, real Connection RPC wire get/set, adapter inheritance and retry policy.');
+  console.log(`PASS: DSH ${sdkVersion} SDK exports, real Session plugin record restore, real Connection RPC wire get/set, adapter inheritance and retry policy.`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

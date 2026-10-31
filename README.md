@@ -1,6 +1,6 @@
 # ShanghaiTech GenAI Plugin
 
-`dsh-shanghaitech-genai@1.0.1`，用于 **DSH Desktop 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
+`dsh-shanghaitech-genai@1.0.2`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
 
 ## 功能
 
@@ -13,17 +13,17 @@
 在 DSH Desktop 插件安装界面提交以下安装来源：
 
 ```text
-github:Github-Anderson/dsh-shanghaitech-genai#v1.0.1
+github:Github-Anderson/dsh-shanghaitech-genai#v1.0.2
 ```
 
-凭证引用为 `SHANGHAITECH_GENAI_API_KEY`，网关地址由部署启动脚本通过 `SHANGHAITECH_GENAI_BASE_URL` 提供，默认是 `http://127.0.0.1:8000/v1`。v1.0.1 使用 Git 标签安装，不随部署仓库提供压缩包。
+凭证引用为 `SHANGHAITECH_GENAI_API_KEY`，网关地址由部署启动脚本通过 `SHANGHAITECH_GENAI_BASE_URL` 提供，默认是 `http://127.0.0.1:8000/v1`。v1.0.2 使用 Git 标签安装，不随部署仓库提供压缩包。
 
 配置凭证后重启 DSH，新建会话，选择 **ShanghaiTech GenAI** 预设与同名模型来源。网关的首次登录和凭证导入步骤见[配套安装指南](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/安装指南.md)。
 
 已配置 DSH CLI 的环境也可安装到指定 profile：
 
 ```sh
-dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.1
+dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.2
 ```
 
 仓库中的运行入口为可直接加载的 JavaScript，无需编译；私有仓库的 GitHub 安装需要当前 Git 环境有读取权限。`private: true` 用于避免误发布到 npm。
@@ -46,6 +46,8 @@ npm pack --dry-run
 ```
 
 `npm test` 运行八组离线检查，使用合成数据和模拟响应。`test-*-sdk.cjs`、`test-sdk.cjs` 与 `test-command.cjs` 用于已安装 DSH SDK 的集成检查，需通过 DSH 的 Electron-as-Node 运行；相应文件中注明了 SDK 路径参数或 `DSH_TEST_SDK_ROOT` 环境变量。
+
+当前源码声明支持 DSH ≥ 0.2.1-rc.2，不设版本上限；不再将 SDK 检查锁定到某个 rc 版本，各 SDK 包仍需版本一致。Git 标签安装仍使用已发布版本；本地验证当前未发布修改时，按配套仓库 `tools/README.md` 先同步再部署。
 
 ## 许可证
 
