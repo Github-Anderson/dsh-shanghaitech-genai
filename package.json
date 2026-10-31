@@ -1,0 +1,89 @@
+{
+  "name": "dsh-shanghaitech-genai",
+  "version": "1.0.0",
+  "description": "ShanghaiTech GenAI Plugin for DSH: model access, session options, attachments and native tools.",
+  "private": true,
+  "license": "MIT",
+  "author": "Github-Anderson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Github-Anderson/dsh-shanghaitech-genai.git"
+  },
+  "homepage": "https://github.com/Github-Anderson/dsh-shanghaitech-genai#readme",
+  "bugs": {
+    "url": "https://github.com/Github-Anderson/dsh-shanghaitech-genai/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "shanghaitech",
+    "genai"
+  ],
+  "main": "index.cjs",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": "0.2.1-rc.2"
+  },
+  "scripts": {
+    "test": "node --test test-contract.cjs test-credentials.cjs test-gateway-url.cjs test-host.cjs test-images.cjs test-options.cjs test-pdf.cjs test-preset.cjs"
+  },
+  "exports": {
+    ".": "./index.cjs",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./pdf-reader": "./pdf-reader.cjs",
+    "./agent-preset": "./agent-preset.cjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-store"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "index.cjs",
+    "client.js",
+    "pdf-reader.cjs",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "LICENSE",
+    "host.cjs",
+    "adapter.cjs",
+    "attachment-routing.cjs",
+    "gateway-contract.cjs",
+    "gateway-url.cjs",
+    "agent-preset.cjs",
+    "gateway-credentials.cjs"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
+    "@deepseek-ai/cordis-plugin-include": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent-preset-registry": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis-plugin-include": {
+      "optional": true
+    }
+  }
+}
