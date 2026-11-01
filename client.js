@@ -27,7 +27,7 @@ window.__ModuleLoader__.load({
         model?.search.supported && toggle('search'),
         model?.thinking.supported && toggle('thinking'),
         props.inputActions && h('button',{type:'button',disabled,title:props.t('attachmentsHelp'),onClick:()=>picker.current?.click()},props.t('attachments')),
-        props.inputActions && h('input',{type:'file',hidden:true,multiple:true,accept:'.png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.csv,.docx',ref:picker,onChange:event=>{
+        props.inputActions && h('input',{type:'file',hidden:true,multiple:true,accept:'.png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.csv,.docx,.xls,.xlsx,.ppt,.pptx,.html,.json',ref:picker,onChange:event=>{
           const files=Array.from(event.target.files??[]);event.target.value='';
           try{props.addWebsiteAttachments(files,props.inputActions);setUploadError('');}catch(error){setUploadError(error.message);}
         }}),
@@ -115,7 +115,7 @@ window.__ModuleLoader__.load({
               for(const file of files){
                 const ext=file.name.split('.').pop().toLowerCase();
                 const image=['png','jpg','jpeg','webp','gif'].includes(ext);
-                if(!image&&!['pdf','txt','csv','docx'].includes(ext))throw Error('attachmentsFormat');
+                if(!image&&!['pdf','txt','csv','docx','xls','xlsx','ppt','pptx','html','json'].includes(ext))throw Error('attachmentsFormat');
                 if(!file.size||file.size>=(image?20:10)*1024*1024)throw Error('attachmentsSize');
               }
               // Exact-byte file receipts preserve GIFs and avoid DSH's normal
@@ -125,8 +125,8 @@ window.__ModuleLoader__.load({
             }};
         }
         ctx.effect(() => ctx.locale.register(NS, {
-          en:{label:'ShanghaiTech GenAI options',search:'Search',thinking:'Thinking',attachments:'Attachments',loading:'Loading options…',retry:'Reload',saveFailed:'Options unavailable or not saved. Reload to retry.',searchHelp:'Use the original website’s web search for the next request.',thinkingHelp:'Use the original website’s deep thinking for the next request.',attachmentsHelp:'Use the original website’s image upload and document parsing. Original files are uploaded when you send. Images <20 MiB; documents <10 MiB.',attachmentsNotReady:'Wait for the current model to be ready before adding attachments.',attachmentsFormat:'Supported images: PNG, JPEG, WebP, GIF. Verified documents: PDF, TXT, CSV, DOCX.',attachmentsSize:'Select nonempty images below 20 MiB or documents below 10 MiB.',attachmentsLocked:'The input is locked. Try adding attachments later.'},
-          zh:{label:'ShanghaiTech GenAI 选项',search:'联网搜索',thinking:'深度思考',attachments:'网页附件',loading:'载入选项…',retry:'重新载入',saveFailed:'选项不可用或未保存，请重新载入。',searchHelp:'直接调用原网页的联网搜索功能，用于下一次请求。',thinkingHelp:'直接调用原网页的深度思考功能，用于下一次请求。',attachmentsHelp:'直接调用原网页的图片上传与文档解析功能，发送时上传原文件。图片 <20 MiB；文档 <10 MiB。',attachmentsNotReady:'请等待当前模型就绪后添加附件。',attachmentsFormat:'支持图片：PNG、JPEG、WebP、GIF；已验证文档：PDF、TXT、CSV、DOCX。',attachmentsSize:'请选择非空文件，图片须小于 20 MiB，文档须小于 10 MiB。',attachmentsLocked:'当前输入已锁定，请稍后再添加附件。'},
+          en:{label:'ShanghaiTech GenAI options',search:'Search',thinking:'Thinking',attachments:'Attachments',loading:'Loading options…',retry:'Reload',saveFailed:'Options unavailable or not saved. Reload to retry.',searchHelp:'Use the original website’s web search for the next request.',thinkingHelp:'Use the original website’s deep thinking for the next request.',attachmentsHelp:'Use the original website’s image upload and document parsing. Original files are uploaded when you send. Images <20 MiB; documents <10 MiB.',attachmentsNotReady:'Wait for the current model to be ready before adding attachments.',attachmentsFormat:'Supported images: PNG, JPEG, WebP, GIF. Verified documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, JSON.',attachmentsSize:'Select nonempty images below 20 MiB or documents below 10 MiB.',attachmentsLocked:'The input is locked. Try adding attachments later.'},
+          zh:{label:'ShanghaiTech GenAI 选项',search:'联网搜索',thinking:'深度思考',attachments:'网页附件',loading:'载入选项…',retry:'重新载入',saveFailed:'选项不可用或未保存，请重新载入。',searchHelp:'直接调用原网页的联网搜索功能，用于下一次请求。',thinkingHelp:'直接调用原网页的深度思考功能，用于下一次请求。',attachmentsHelp:'直接调用原网页的图片上传与文档解析功能，发送时上传原文件。图片 <20 MiB；文档 <10 MiB。',attachmentsNotReady:'请等待当前模型就绪后添加附件。',attachmentsFormat:'支持图片：PNG、JPEG、WebP、GIF；已验证文档：PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、JSON。',attachmentsSize:'请选择非空文件，图片须小于 20 MiB，文档须小于 10 MiB。',attachmentsLocked:'当前输入已锁定，请稍后再添加附件。'},
         }), 'ShanghaiTech: option labels');
         for (const name of ['conversation.input.left','conversation.hero.options']) ctx.slots.inject(name, () => ctx.slots.register({name,id:'shanghaitech-options',order:20,locale:NS,inject:face}, Options));
       },

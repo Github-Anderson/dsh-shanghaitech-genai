@@ -6,7 +6,10 @@ const {gatewayApiKey}=require('./gateway-credentials.cjs');
 const {conversationId}=require('./gateway-contract.cjs');
 const requests=new AsyncLocalStorage();
 const MAX_BYTES=20*1024*1024;
-const DOCUMENT_TYPES={'.pdf':'application/pdf','.txt':'text/plain','.csv':'text/csv','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
+const DOCUMENT_TYPES={'.pdf':'application/pdf','.txt':'text/plain','.csv':'text/csv','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls':'application/vnd.ms-excel','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt':'application/vnd.ms-powerpoint','.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.html':'text/html','.json':'application/json'};
 
 // Capture typed references before DSH unconditionally projects them to text.
 // Never infer filesystem access from model/user text that resembles a handle.
@@ -51,7 +54,7 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index) 
     ['GIF87a','GIF89a'].includes(bytes.subarray(0,6).toString())?'image/gif':null;
   const suffix=require('node:path').extname(ref.name??'').toLowerCase();
   const mime=imageMime??DOCUMENT_TYPES[suffix];
-  if(!mime)throw new ErrorType('Verified website documents: PDF, TXT, CSV, DOCX. Other formats are unconfirmed or unsupported; use @path for local file operations.','UNSUPPORTED_CONTENT');
+  if(!mime)throw new ErrorType('Verified website documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, JSON. Other formats are unconfirmed or unsupported; use @path for local file operations.','UNSUPPORTED_CONTENT');
   if(!imageMime&&bytes.length>=10*1024*1024)throw new ErrorType('Website documents must be below 10 MiB.','UNSUPPORTED_CONTENT');
   const key=await gatewayApiKey(ctx.credentials);
   const form=new FormData();

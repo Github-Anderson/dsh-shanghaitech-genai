@@ -54,10 +54,21 @@ async function main(){
    await Promise.all([run('parallel-a',[{type:'file',attachment:txt}]),run('parallel-b',[{type:'file',attachment:pdf}])]);
    assert(uploads.some(u=>u.conversation===conversationId('parallel-a')&&u.bytes.equals(sources.get(txt.attachmentId))));
    assert(uploads.some(u=>u.conversation===conversationId('parallel-b')&&u.bytes.equals(sources.get(pdf.attachmentId))));
+   for(const [ext,mime] of [['xls','application/vnd.ms-excel'],['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+     ['ppt','application/vnd.ms-powerpoint'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['html','text/html'],['json','application/json']]){
+     const raw=Buffer.from('FORMAT_PROBE_'+ext),file=ref('probe.'+ext.toUpperCase(),raw);
+     const sent=await run('format-'+ext,[{type:'file',attachment:file}]);
+     assert.equal(sent.finish.reason.kind,'stop');assert.equal(uploads.at(-1).mime,mime);assert(uploads.at(-1).bytes.equals(raw));
+     assert.equal(wire.at(-1).messages[0].content.filter(p=>p.type==='file').length,1);
+   }
    denied=true;const count=uploads.length;const failure=await run('denied',[{type:'file',attachment:txt}]);
    assert.equal(failure.finish.reason.kind,'error');assert.equal(uploads.length,count);denied=false;
    const bad=ref('one.md',Buffer.from('# no fallback'));const unsupported=await run('bad',[{type:'file',attachment:bad}]);
    assert.equal(unsupported.finish.reason.kind,'error');assert.equal(uploads.length,count);
+   for(const ext of ['doc','xml']){
+     const rejected=await run('reject-'+ext,[{type:'file',attachment:ref('probe.'+ext,Buffer.from('unsupported'))}]);
+     assert.equal(rejected.finish.reason.kind,'error');assert.equal(uploads.length,count);
+   }
    console.log(JSON.stringify({status:'PASS',checks:['real Cordis waterfall','real SDK frozen-file projection','automatic multi-upload','same chat conversation','native tool catalog retained','local @paths excluded','forged handles excluded','raw GIF retained','concurrent request isolation','sandbox denial','unsupported format no fallback'],upstream_requests:0,real_tools_executed:0}));
  }finally{global.fetch=originalFetch;await root.fiber.dispose();}
 }
