@@ -1,6 +1,6 @@
 {
   "name": "dsh-shanghaitech-genai",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ShanghaiTech GenAI Plugin for DSH: model access, session options, attachments and native tools.",
   "private": true,
   "license": "MIT",
@@ -25,7 +25,7 @@
     "dsh": ">=0.2.1-rc.2"
   },
   "scripts": {
-    "test": "node --test test-contract.cjs test-credentials.cjs test-gateway-url.cjs test-host.cjs test-images.cjs test-options.cjs test-pdf.cjs test-preset.cjs"
+    "test": "node --test test-session-delete.cjs test-contract.cjs test-credentials.cjs test-gateway-url.cjs test-host.cjs test-images.cjs test-options.cjs test-pdf.cjs test-preset.cjs"
   },
   "exports": {
     ".": "./index.cjs",
@@ -64,7 +64,8 @@
     "gateway-contract.cjs",
     "gateway-url.cjs",
     "agent-preset.cjs",
-    "gateway-credentials.cjs"
+    "gateway-credentials.cjs",
+    "session-delete.cjs"
   ],
   "peerDependencies": {
     "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2",

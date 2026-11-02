@@ -49,7 +49,7 @@ async function gatewayJson(path, key, signal, options = {}) {
 }
 
 exports.name = 'shanghaitech-genai-pdf-reader';
-exports.inject = ['tools', 'fs', 'workingDirectory', 'credentials', 'systemPrompt'];
+exports.inject = ['tools', 'fs', 'workingDirectory', 'credentials', 'systemPrompt', 'sessions'];
 exports.apply = function (ctx) {
   // Scope-local extracted-text cache, never a cache of filesystem permissions.
   // Every call rereads the source through ctx.fs before looking up its digest.
@@ -92,6 +92,10 @@ exports.apply = function (ctx) {
       // Extraction is a separate, fixed-model upload. Its document-scoped
       // group must not occupy the selected answering model's chat group.
       const extractionConversation=conversationId(exec.agent?.session?.id,'pdf-extract',digest);
+      if(extractionConversation&&ctx.sessions?.get(exec.agent.session.id)){
+        const {appendPluginRecord}=await import('@deepseek-ai/dsh-session');
+        await require('./session-delete.cjs').recordConversation(ctx,appendPluginRecord,exec.agent.session.id,extractionConversation,exec.signal);
+      }
       let result = extractions.get(digest);
       if (!result) {
         const form = new FormData();

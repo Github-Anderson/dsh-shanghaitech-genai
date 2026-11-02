@@ -16,6 +16,7 @@ async function main(){
   assert.equal(base,'/api');assert(signal instanceof AbortSignal);requests.push({endpoint,payload});
   if(deferred) await deferred;
   if(reject) return {ok:false,error:{code:'FAILED'}};
+  if(endpoint==='shanghaitech.session.delete')return {ok:true,value:{sessionId:payload.sessionId,deleted:true}};
   let row=saved.get(payload.model)||{provider:'shanghaitech-genai',model:payload.model,search:false,thinking:false,revision:0,capabilities:caps};
   if(endpoint.endsWith('.set')){assert.equal(payload.expectedRevision,row.revision);row={...row,search:payload.search,thinking:payload.thinking,revision:row.revision+1};saved.set(payload.model,row);}
   return {ok:true,value:row};
@@ -44,7 +45,7 @@ async function main(){
      const snapshot=face.hooks.options.getSnapshot();
      const tree=component({useOptions:()=>({...snapshot,value:{...snapshot.value,search:enabled,thinking:enabled}}),t,inputActions:{},selectOptions:face.selectOptions});
      const buttons=tree.children.filter(child=>child?.type==='button');
-     assert.deepEqual(buttons.map(b=>b.children[0]),lang==='en'?['Search','Thinking','Attachments']:['联网搜索','深度思考','网页附件']);
+     assert.deepEqual(buttons.map(b=>b.children[0]),lang==='en'?['Search','Thinking','Attachments','Delete session']:['联网搜索','深度思考','网页附件','删除会话']);
      for(const b of buttons.slice(0,2)){assert.equal(b.props['aria-checked'],enabled);assert(b.props.title);}
      assert(buttons[2].props.title.includes(lang==='en'?'original website':'原网页'));
    }
@@ -52,6 +53,10 @@ async function main(){
  }
  directory.set({current:{provider:'shanghaitech-genai',model:'deepseek-pro'},pending:null,status:'ready'});await flush();
  const count=requests.length;await face.selectOptions('thinking',true);assert.equal(requests.length,count);
+ reject=true;assert.equal(await face.deleteSession(true),false);assert(face.hooks.options.getSnapshot().deleteError);assert(!face.hooks.options.getSnapshot().deleted);
+ reject=false;assert.equal(await face.deleteSession(false),true);assert.equal(face.hooks.options.getSnapshot().deleted,true);
+ assert.equal(requests.at(-1).endpoint,'shanghaitech.session.delete');assert.equal(requests.at(-1).payload.deleteWebsite,false);
+ const afterDelete=requests.length;assert.equal(await face.deleteSession(false),false);assert.equal(requests.length,afterDelete);
  directory.set({current:{provider:'other',model:'x'},pending:null,status:'ready'});assert.equal(face.hooks.options.getSnapshot().visible,false);
  let release;deferred=new Promise(resolve=>release=resolve);
  directory.set({current:{provider:'shanghaitech-genai',model:'Kimi-k3'},pending:null,status:'ready'});

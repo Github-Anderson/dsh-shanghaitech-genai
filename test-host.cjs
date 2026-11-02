@@ -4,7 +4,7 @@ const {OptionsHost,RECORD,fold}=require('./host.cjs');
 const {createAdapter,messagesOf}=require('./adapter.cjs');
 const capabilities={protocol_version:'1.1',conversations:{request_field:'conversation_id'},options:{sources_phase:'after_chat_completion'},usage:{stream_opt_in:'stream_options.include_usage'},models:['Kimi-k3','deepseek-pro'].map(id=>({id,name:id,search:{supported:true,default:false},thinking:{supported:id==='Kimi-k3',default:false},attachments:{images:{supported:id==='deepseek-pro'}}}))};
 const events=[{type:'model/selection',data:{provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'}}];
-const live={id:'s'};let flush=true;const routes=[],listeners={};
+const live={id:'s',snapshotEvents:()=>structuredClone(events)};let flush=true;const routes=[],listeners={};
 const ctx={credentials:{resolve:async()=>({value:'fake-local-key'})},sessionQuery:{readSession:async id=>({session:{id,origin:id==='child'?'subagent':'user',...(id==='child'?{parentSession:'s'}:{})},events:structuredClone(events)})},sessions:{get:id=>id==='s'?live:undefined,flush:async()=>flush},sessionController:{selectModel:async()=>{}},effect:f=>f(),connection:{fetch:{register:r=>{routes.push(r);return()=>{};}}},on:(name,handler)=>{listeners[name]=handler;}};
 const host=new OptionsHost(ctx,(_s,type,data)=>events.push({type,data}),()=>({'x-client':'test'}),async()=>Response.json(capabilities));
 class LlmError extends Error{constructor(message,code){super(message);this.code=code;}}
@@ -25,8 +25,8 @@ async function main(){
   flush=false;await assert.rejects(host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:true,expectedRevision:2}));assert.equal((await host.get({sessionId:'s',model:'Kimi-k3'})).search,true);await assert.rejects(host.snapshot('s','Kimi-k3'));flush=true;
   assert.deepEqual(await host.snapshot('child','Kimi-k3'),{search:true,thinking:false});await assert.rejects(host.get({sessionId:'child',model:'Kimi-k3'}),/parent/);
   const restored=new OptionsHost(ctx,host.append,host.attribution,host.fetch);assert.equal((await restored.get({sessionId:'s',model:'Kimi-k3'})).revision,4);
-  host.install();assert.equal(routes.length,2);
-  const reply=await routes[0].fetch(new Request('http://local/api/shanghaitech.options.get',{method:'POST',body:JSON.stringify({type:'client-request',rpcId:'r',method:'shanghaitech.options.get',payload:{sessionId:'s',model:'Kimi-k3'}})}));assert.equal((await reply.json()).result.value.thinking,false);
+  host.install();assert.equal(routes.length,3);
+  const reply=await routes.find(row=>row.path==='/api/shanghaitech.options.get').fetch(new Request('http://local/api/shanghaitech.options.get',{method:'POST',body:JSON.stringify({type:'client-request',rpcId:'r',method:'shanghaitech.options.get',payload:{sessionId:'s',model:'Kimi-k3'}})}));assert.equal((await reply.json()).result.value.thinking,false);
   const config=await listeners['agent/request']({agent:{session:live}},async()=>({provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'}));assert.equal(config.reasoningEffort,undefined);assert.equal(host.snapshots.get('s').value.thinking,false);
   let wire;host.fetch=async(url,init)=>{wire=JSON.parse(init.body);return streamResponse([data({choices:[{delta:{reasoning_content:'思考'}}]}).slice(0,13),data({choices:[{delta:{reasoning_content:'思考'}}]}).slice(13),data({choices:[{delta:{content:'答案'},finish_reason:'stop'}]}),'data: [DONE]\n\n']);};
   const adapter=createAdapter(llm,host,ctx);const options={provider:'shanghaitech-genai',model:'Kimi-k3',sessionId:'s',system:'sys',messages:[{role:'user',content:[{type:'text',text:'hello'}]}]};

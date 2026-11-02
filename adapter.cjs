@@ -89,6 +89,7 @@ function createAdapter(llm,host,ctx) {
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(330000),...(options.signal?[options.signal]:[])]);
       try {
         const conversation=conversationId(options.sessionId,options.purpose??'chat');
+        await host.trackConversation?.(options.sessionId,conversation,signal);
         const request={model:options.model,messages:await messagesOf({...options,signal},ctx,LlmError,llm),stream:true,max_tokens:options.maxTokens??4096,shanghaitech:flags,
           stream_options:{include_usage:true},...conversation?{conversation_id:conversation}:{}};
         if(options.tools?.length) request.tools=options.tools.filter(tool=>tool.deferLoading!==true).map(tool=>({type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters}}));

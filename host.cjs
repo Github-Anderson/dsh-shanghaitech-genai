@@ -103,6 +103,10 @@ class OptionsHost {
     return Object.freeze(snapshot);
   }
   install() {
+    const {SessionDeletion}=require('./session-delete.cjs');
+    this.deletion=new SessionDeletion(this);
+    this.trackConversation=(...args)=>this.deletion.track(...args);
+    this.deletion.install();
     for(const action of ['get','set']) {
       const endpoint='shanghaitech.options.'+action;
       this.ctx.effect(()=>this.ctx.connection.fetch.register({path:'/api/'+endpoint,methods:['POST'],requestBody:'buffered',fetch:async request=>{
