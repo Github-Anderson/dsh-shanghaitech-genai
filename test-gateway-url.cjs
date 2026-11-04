@@ -4,17 +4,17 @@ const {gatewayBaseUrl, DEFAULT_BASE_URL} = require('./gateway-url.cjs');
 const {OptionsHost} = require('./host.cjs');
 const {createAdapter} = require('./adapter.cjs');
 async function main() {
-  assert.equal(gatewayBaseUrl({}), DEFAULT_BASE_URL);
+  assert.equal(gatewayBaseUrl({DSH_HOME:process.env.DSH_HOME}), DEFAULT_BASE_URL);
   for (const [input, expected] of [
     ['http://localhost:8123', 'http://localhost:8123/v1'],
     ['https://example.invalid/proxy/v1/', 'https://example.invalid/proxy/v1'],
     ['https://example.invalid/proxy', 'https://example.invalid/proxy/v1'],
     ['http://[::1]:8000/v1', 'http://[::1]:8000/v1'],
   ]) {
-    assert.equal(gatewayBaseUrl({SHANGHAITECH_GENAI_BASE_URL: input}), expected);
+    assert.equal(gatewayBaseUrl({DSH_HOME:process.env.DSH_HOME,SHANGHAITECH_GENAI_BASE_URL: input}), expected);
   }
   for (const input of ['', 'invalid', 'file:///tmp/key', 'https://user:secret@example.invalid', 'https://example.invalid/?key=secret', 'https://example.invalid/#secret']) {
-    assert.throws(() => gatewayBaseUrl({SHANGHAITECH_GENAI_BASE_URL: input}), error => !error.message.includes('secret') && /HTTP\(S\)/.test(error.message));
+    assert.throws(() => gatewayBaseUrl({DSH_HOME:process.env.DSH_HOME,SHANGHAITECH_GENAI_BASE_URL: input}), error => !error.message.includes('secret') && /HTTP\(S\)/.test(error.message));
   }
   const original = process.env.SHANGHAITECH_GENAI_BASE_URL;
   process.env.SHANGHAITECH_GENAI_BASE_URL = 'https://example.invalid/proxy/v1/';

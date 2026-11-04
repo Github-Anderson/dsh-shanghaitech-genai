@@ -1,6 +1,6 @@
 # ShanghaiTech GenAI Plugin
 
-`dsh-shanghaitech-genai@1.0.4`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
+`dsh-shanghaitech-genai@1.0.5`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
 
 ## 功能
 
@@ -36,22 +36,22 @@ macOS（终端）：
 ./ShanghaiTech-GenAI/tools/Deploy-Local.sh
 ```
 
-部署脚本会自动同步网关密钥；检查完成后完全退出 DSH，再通过对应系统的 `local/deploy/Start.ps1`（Windows）或 `./local/deploy/Start.sh`（macOS）重启。后续更新分别运行 `local/Update.ps1` 或 `./local/Update.sh`。Windows `.ps1` 入口使用 `powershell -ExecutionPolicy Bypass -File` 调用。配置和网站凭证保存在仓库外的 `local/deploy/private/`。详细参数见配套仓库的[本地开发环境](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/tools/README.md)。
+在网关仓库运行 `tools/Setup.sh`（macOS）或 `tools/Setup.ps1` / `tools/Setup.cmd`（Windows）完成首次部署和后续更新。运行目录默认为 macOS 的 `~/.local/share/shanghaitech-genai/`，或 Windows 的 `%LOCALAPPDATA%\ShanghaiTech-GenAI\`。配置和网站凭证保存在其中的 `deploy/private/`；检查完成后完全退出 DSH，再通过运行目录中的 `deploy/Start.sh` 或 `deploy/Start.ps1` 启动。详细参数见配套仓库的[本地开发环境](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/tools/README.md)。
 
 如果选择安装已发布版本，可在 DSH Desktop 插件安装界面提交以下来源：
 
 ```text
-github:Github-Anderson/dsh-shanghaitech-genai#v1.0.4
+github:Github-Anderson/dsh-shanghaitech-genai#v1.0.5
 ```
 
-凭证引用为 `SHANGHAITECH_GENAI_API_KEY`，网关地址由部署启动脚本通过 `SHANGHAITECH_GENAI_BASE_URL` 提供，默认是 `http://127.0.0.1:8000/v1`。已发布的 v1.0.4 可通过 Git 标签安装；本地源码部署使用同步脚本生成的插件包，包含未提交修改。
+本地部署会自动登记私有目录，插件从其中的 `dsh-gateway.json` 读取 `base_url` 和 `key_file`，直接打开 DSH Desktop 也会使用该配置。`base_url` 未填写或留空时，使用 `http://127.0.0.1:8000/v1` 及私有目录中的 `gateway.key`；配置远程地址时，使用 `key_file` 指定的密钥文件（相对于私有目录）。配置示例和部署步骤见配套仓库的[本地开发环境](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/tools/README.md)。尚未登记私有目录时，地址可通过 `SHANGHAITECH_GENAI_BASE_URL` 提供，密钥使用 DSH 凭证引用 `SHANGHAITECH_GENAI_API_KEY`。已发布的 v1.0.5 可通过 Git 标签安装；本地源码部署使用同步脚本生成的插件包，包含未提交修改。
 
 配置凭证后重启 DSH，新建会话，选择 **ShanghaiTech GenAI** 预设与同名模型来源。网关的首次登录和凭证导入步骤见[配套安装指南](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/安装指南.md)。
 
 已配置 DSH CLI 的环境也可安装到指定 profile：
 
 ```sh
-dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.4
+dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.5
 ```
 
 仓库中的运行入口为可直接加载的 JavaScript，无需编译；私有仓库的 GitHub 安装需要当前 Git 环境有读取权限。`private: true` 用于避免误发布到 npm。
@@ -82,7 +82,7 @@ TMPDIR=/private/tmp npm test
 npm pack --dry-run
 ```
 
-macOS 运行离线检查时设置 `TMPDIR=/private/tmp`，避免系统临时目录符号链接触发路径防护；Node 需满足 `package.json` 的版本要求，也可使用 DSH 应用内置 Node/pnpm。`npm test` 运行九组离线检查，使用合成数据和模拟响应。`test-*-sdk.cjs`、`test-sdk.cjs` 与 `test-command.cjs` 用于已安装 DSH SDK 的集成检查，需通过 DSH 的 Electron-as-Node 运行；相应文件中注明了 SDK 路径参数或 `DSH_TEST_SDK_ROOT` 环境变量。
+macOS 运行离线检查时设置 `TMPDIR=/private/tmp`，避免系统临时目录符号链接触发路径防护；Node 需满足 `package.json` 的版本要求，也可使用 DSH 应用内置 Node/pnpm。`npm test` 在隔离的 DSH 数据目录中运行十组离线检查，使用合成数据和模拟响应。`test-*-sdk.cjs`、`test-sdk.cjs` 与 `test-command.cjs` 用于已安装 DSH SDK 的集成检查，需通过 DSH 的 Electron-as-Node 运行；相应文件中注明了 SDK 路径参数或 `DSH_TEST_SDK_ROOT` 环境变量。
 
 当前源码声明支持 DSH ≥ 0.2.1-rc.2，不设版本上限；不再将 SDK 检查锁定到某个 rc 版本，各 SDK 包仍需版本一致。Git 标签安装仍使用已发布版本；本地验证当前未发布修改时，按配套仓库 `tools/README.md` 先同步再部署。
 
