@@ -1,10 +1,17 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {definitionFromStandard,registerPreset}=require('./agent-preset.cjs');
+const {definitionFromStandard,registerPreset,workflowCapacity}=require('./agent-preset.cjs');
 const parse=JSON.parse;
 const rows=[{id:'native-tools',name:'official-tools',config:{approval:'unchanged'}}];
 const document={agentPreset:'standard',content:JSON.stringify(rows)};
 async function main(){
+ const native=[{group:true,config:[{name:'@deepseek-ai/dsh-workflow-ptc',disabled:false,config:{provider:'spawn',maxTotalAgents:1000}},{name:'@deepseek-ai/dsh-tool-workflow'},{name:'@deepseek-ai/dsh-tool-jobs'}]}];
+ const before=JSON.stringify(native), adapted=workflowCapacity(native);
+ assert.equal(adapted[0].config[0].config.maxConcurrentAgents,1);
+ assert.equal(adapted[0].config[0].config.maxTotalAgents,1000);
+ assert.equal(adapted[0].config[0].disabled,false);
+ assert.equal(JSON.stringify(native),before);
+ assert.deepEqual(adapted[0].config.slice(1),native[0].config.slice(1));
  const definition=definitionFromStandard(document,parse);
  assert.equal(definition.id,'shanghaitech-genai');
  assert.deepEqual(definition.plugins.slice(0,-1),rows);

@@ -36,6 +36,15 @@ async function main(){
   const history=await messagesOf({...options,messages:[{role:'assistant',content:[{type:'tool-call',id:'c',name:'read',arguments:'{}'}]},{role:'tool',toolCallId:'c',content:[{type:'text',text:'real output'}]}]},ctx);assert.equal(history[1].tool_calls[0].id,'c');assert.equal(history[2].tool_call_id,'c');
   host.fetch=async()=>streamResponse([data({choices:[{delta:{content:'incomplete'},finish_reason:'stop'}]})]);await assert.rejects(collect(adapter.stream(options)),/without/);
   host.fetch=async()=>streamResponse([data({error:{code:'upstream_timeout',message:'Timed out'}})]);await assert.rejects(collect(adapter.stream(options)),e=>e.code==='upstream_timeout');
+  for(const code of ['queue_full','queue_timeout']) {
+    host.fetch=async()=>Response.json({error:{code,message:'Queue busy'}},{status:429});
+    await assert.rejects(collect(adapter.stream(options)),e=>e.code===code);
+    host.fetch=async()=>Response.json({error:{code,message:'Wrong phase'}},{status:502});
+    await assert.rejects(collect(adapter.stream(options)),e=>e.code==='GATEWAY_STREAM_ERROR');
+    host.fetch=async()=>streamResponse([data({choices:[{delta:{content:'partial'}}]}),data({error:{code,message:'Wrong phase'}})]);
+    await assert.rejects(collect(adapter.stream(options)),e=>e.code==='GATEWAY_STREAM_ERROR');
+  }
+  assert.deepEqual(adapter.providerRetryPolicy().retryableCodes,['queue_full','queue_timeout']);
   assert.equal((await adapter.resolveModel('shanghaitech-genai','Kimi-k3')).reasoning,undefined);
   console.log('PASS: host persistence, configured defaults, revisions, failed-save compensation, subagent inheritance, RPC, request snapshots, text/reasoning/tools, truncation/errors, unknown usage.');
 }

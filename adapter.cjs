@@ -4,6 +4,12 @@ const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
 const {uploadedFilePart}=require('./attachment-routing.cjs');
 const {conversationId,usageOf,collectMetadata,sourceText,replayState}=require('./gateway-contract.cjs');
 // Configured context capacities; retain the existing fallback for other models.
+// The native dsh-llm-retry plugin owns backoff, cancellation and UI state.
+// Only HTTP admission failures are eligible; a stream error is never replayed.
+const QUEUE_RETRY_CODES = Object.freeze(['queue_full','queue_timeout']);
+function streamErrorCode(code) {
+  return QUEUE_RETRY_CODES.includes(code) ? 'GATEWAY_STREAM_ERROR' : code;
+}
 const CONTEXT_WINDOWS = Object.freeze({'GPT-6.1-Terra':1050000,'gpt-6-astra':1050000,'GPT-6-Luna':1050000,'chatglm':128*1024,'qwen-instruct':256*1024,'Kimi-k3':200*1024,'deepseek-pro':1024*1024});
 function imageTarget(ref) { return {width:ref.width,height:ref.height,maxBytes:1024*1024}; }
 async function messagesOf(options,ctx,ErrorType=Error,imageHelpers={},connection) {
@@ -63,7 +69,7 @@ async function* sse(response,signal,ErrorType=Error) {
         if(!data)continue;
         if(data==='[DONE]'){yield null;return;}
         let event;try{event=JSON.parse(data);}catch{throw new ErrorType('Invalid gateway stream JSON.','INVALID_RESPONSE');}
-        if(event.error)throw new ErrorType(String(event.error.message||'Gateway failed.'),String(event.error.code||'GATEWAY_ERROR'));
+        if(event.error)throw new ErrorType(String(event.error.message||'Gateway failed.'),streamErrorCode(String(event.error.code||'GATEWAY_ERROR')));
         yield event;
       }
       if(pending.length>2*1024*1024)throw new ErrorType('Gateway event exceeded its size limit.','OUTPUT_LIMIT');
@@ -76,7 +82,7 @@ function createAdapter(llm,host,ctx) {
   return new class ShanghaiTechAdapter extends LlmAdapter {
     imageRequestTarget(_provider,_model,image){return imageTarget(image);}
     providerInfo(){return {id:PROVIDER,name:'ShanghaiTech GenAI'};}
-    providerRetryPolicy(){return llm.resolveRetryPolicy({mode:'normal',maxRetries:0},'ShanghaiTech GenAI');}
+    providerRetryPolicy(){return llm.resolveRetryPolicy({mode:'normal',maxRetries:8,retryableCodes:[...QUEUE_RETRY_CODES],backoff:{initialDelayMs:1000,maxDelayMs:8000,jitterRatio:0.1}},'ShanghaiTech GenAI');}
     modelInfo(m){return {provider:PROVIDER,id:m.id,name:m.name,inputModalities:m.attachments.images.supported?['text','image']:['text'],context:{contextWindow:CONTEXT_WINDOWS[m.id]??8192},defaultMaxTokens:4096};}
     async listModels(){return (await host.capabilities()).models.map(m=>this.modelInfo(m));}
     async resolveModel(provider,model,signal){const m=(await host.capabilities(signal)).models.find(m=>m.id===model);if(!m)throw new LlmError('Unknown ShanghaiTech GenAI model.','MODEL_NOT_FOUND');return this.modelInfo(m);}
@@ -95,7 +101,7 @@ function createAdapter(llm,host,ctx) {
           stream_options:{include_usage:true},...conversation?{conversation_id:conversation}:{}};
         if(options.tools?.length) request.tools=options.tools.filter(tool=>tool.deferLoading!==true).map(tool=>({type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters}}));
         const response=await host.fetch(gatewayBaseUrl(connection)+'/chat/completions',{method:'POST',headers:{...await host.headers(connection),'Content-Type':'application/json'},body:JSON.stringify(request),signal,redirect:'error'});
-        if(!response.ok){let error;try{error=(await response.json()).error;}catch{}throw new LlmError(error?.message||'Gateway HTTP '+response.status,error?.code||'GATEWAY_HTTP_ERROR');}
+        if(!response.ok){let error;try{error=(await response.json()).error;}catch{}throw new LlmError(error?.message||'Gateway HTTP '+response.status,response.status===429 ? error?.code||'GATEWAY_HTTP_ERROR' : streamErrorCode(error?.code||'GATEWAY_HTTP_ERROR'));}
         let nextIndex=0,finish,done=false;
         const metadata={};
         const blocks=new Map();

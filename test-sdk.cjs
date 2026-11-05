@@ -31,7 +31,7 @@ async function main(){
   const write=await client.rpc.call('/api','shanghaitech.options.set',{sessionId:'sdk-test',model:'Kimi-k3',search:true,thinking:true,expectedRevision:0});assert.equal(write.ok,true);assert.equal(write.value.search,true);
   assert.equal(session.snapshotEvents().at(-1).ignorable,true);
   const restored=Session.create('sdk-test',session.snapshotEvents(),session.header);assert.equal(restored.snapshotEvents().find(e=>e.type==='plugin:shanghaitech-genai/options').data.search,true);
-  const adapter=createAdapter(llm,host,ctx);assert(adapter instanceof llm.LlmAdapter);assert.equal(adapter.providerRetryPolicy().maxRetries,0);assert.equal((await adapter.resolveModel('shanghaitech-genai','Kimi-k3')).reasoning,undefined);
+  const adapter=createAdapter(llm,host,ctx);assert(adapter instanceof llm.LlmAdapter);assert.equal(adapter.providerRetryPolicy().maxRetries,8);assert.deepEqual(adapter.providerRetryPolicy().retryableCodes,['queue_full','queue_timeout']);assert.equal((await adapter.resolveModel('shanghaitech-genai','Kimi-k3')).reasoning,undefined);
   console.log(`PASS: DSH ${sdkVersion} SDK exports, real Session plugin record restore, real Connection RPC wire get/set, adapter inheritance and retry policy.`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

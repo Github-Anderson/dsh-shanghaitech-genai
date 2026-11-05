@@ -42,11 +42,17 @@ async function main(){
   await plugin.apply({agentPresets:{readDocument:async id=>{assert.equal(id,'standard');return document;},register:async value=>{assert.equal(entryListProblem(value.plugins),undefined);captured=value;return async()=>{disposed=true;};}},effect:fn=>{dispose=fn();}});
   assert.equal(captured.id,'shanghaitech-genai');
   assert.equal(captured.name,'ShanghaiTech GenAI');
-  assert.equal(dump(captured.plugins.slice(0,-1),{schema:entryListSchema,noRefs:true}),baseline,'All native config and expression gates must survive the official YAML roundtrip.');
+  function restoreWorkflow(rows, originals) {return rows.map((row,i)=>row.group&&Array.isArray(row.config)
+    ? {...row,config:restoreWorkflow(row.config,originals[i].config)}
+    : row.name==='@deepseek-ai/dsh-workflow-ptc' ? {...row,config:originals[i].config} : row);}
+  assert.equal(dump(restoreWorkflow(captured.plugins.slice(0,-1),declared),{schema:entryListSchema,noRefs:true}),baseline,'Only native workflow capacity changes; all other config and platform gates survive.');
   assert.equal(captured.plugins.length,declared.length+1);
   const flatten=rows=>rows.flatMap(row=>[row,...(row.group?flatten(row.config):[])]);
   const rows=flatten(captured.plugins);
   for(const name of ['dsh-tool-pwsh','dsh-tool-bash','dsh-tool-fs','dsh-tool-jobs'])assert(rows.some(row=>row.name==='@deepseek-ai/'+name),name+' must be retained');
+  assert.equal(rows.find(row=>row.name==='@deepseek-ai/dsh-workflow-ptc').config.maxConcurrentAgents,1);
+  assert(rows.some(row=>row.name==='@deepseek-ai/dsh-tool-workflow'));
+  assert(fs.readFileSync(path.join(path.dirname(shipped.resolve('@deepseek-ai/dsh-base/package.json')),'cordis.patch.yml'),'utf8').includes('@deepseek-ai/dsh-llm-retry'));
   const pwsh=rows.find(row=>row.name==='@deepseek-ai/dsh-tool-pwsh');
   assert(isJsExpr(pwsh.disabled),'The native platform gate must remain an unevaluated SDK expression.');
   assert.equal(rows.filter(row=>row.name==='dsh-shanghaitech-genai/pdf-reader').length,1);

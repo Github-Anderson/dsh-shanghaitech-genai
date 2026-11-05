@@ -1,5 +1,15 @@
 'use strict';
 
+// Keep DSH's own workflow engine, queue, tools and Jobs lifecycle. Only
+// constrain child creation for this single-account gateway preset.
+function workflowCapacity(rows) {
+  return rows.map(row => row.group && Array.isArray(row.config)
+    ? {...row,config:workflowCapacity(row.config)}
+    : row.name==='@deepseek-ai/dsh-workflow-ptc'
+      ? {...row,config:{...row.config,maxConcurrentAgents:1}}
+      : row);
+}
+
 function definitionFromStandard(document, parse) {
   if(document?.agentPreset!=='standard' || typeof document.content!=='string')throw Error('The standard Agent preset is unavailable.');
   const plugins=parse(document.content);
@@ -8,7 +18,7 @@ function definitionFromStandard(document, parse) {
   // declared composition, preserving native !!js platform gates and settings.
   return {id:'shanghaitech-genai',name:'ShanghaiTech GenAI',order:89,
     description:'Standard Agent 工具与权限流程，增加 ShanghaiTech GenAI PDF 解析。',
-    plugins:[...plugins,{id:'shanghaitech-genai-pdf-reader',name:'dsh-shanghaitech-genai/pdf-reader'}]};
+    plugins:[...workflowCapacity(plugins),{id:'shanghaitech-genai-pdf-reader',name:'dsh-shanghaitech-genai/pdf-reader'}]};
 }
 
 async function registerPreset(ctx, parse, wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))) {
@@ -35,3 +45,5 @@ exports.apply=async function(ctx) {
 };
 exports.definitionFromStandard=definitionFromStandard;
 exports.registerPreset=registerPreset;
+
+exports.workflowCapacity=workflowCapacity;
