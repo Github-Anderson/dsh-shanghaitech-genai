@@ -1,7 +1,7 @@
 'use strict';
 const {AsyncLocalStorage}=require('node:async_hooks');
 const {createHash}=require('node:crypto');
-const {gatewayBaseUrl}=require('./gateway-url.cjs');
+const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
 const {gatewayApiKey}=require('./gateway-credentials.cjs');
 const {conversationId}=require('./gateway-contract.cjs');
 const requests=new AsyncLocalStorage();
@@ -33,7 +33,7 @@ function installAttachmentRouting(ctx) {
   });
 }
 
-async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index) {
+async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,connection) {
   const entry=requests.getStore()?.get(message?.id+':'+index);
   if(!entry||entry.text!==text)return null;
   const ref=entry.ref;
@@ -56,7 +56,9 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index) 
   const mime=imageMime??DOCUMENT_TYPES[suffix];
   if(!mime)throw new ErrorType('Verified website documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, JSON. Other formats are unconfirmed or unsupported; use @path for local file operations.','UNSUPPORTED_CONTENT');
   if(!imageMime&&bytes.length>=10*1024*1024)throw new ErrorType('Website documents must be below 10 MiB.','UNSUPPORTED_CONTENT');
-  const key=await gatewayApiKey(ctx.credentials);
+  connection ??= await gatewayConnection(ctx.credentials);
+  const baseUrl=gatewayBaseUrl(connection);
+  const key=await gatewayApiKey(ctx.credentials,connection);
   const form=new FormData();
   form.set('model',options.model);form.set('purpose','user_data');
   form.set('include_content','false');
@@ -64,7 +66,7 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index) 
   if(conversation)form.set('conversation_id',conversation);
   // DSH display names are untrusted; avoid leaking paths to upstream.
   form.set('file',new Blob([data],{type:mime}),'attachment'+(imageMime?{ 'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp','image/gif':'.gif'}[imageMime]:suffix));
-  const response=await fetch(gatewayBaseUrl()+'/files',{method:'POST',headers:{Authorization:'Bearer '+key},body:form,signal:options.signal,redirect:'error'});
+  const response=await fetch(baseUrl+'/files',{method:'POST',headers:{Authorization:'Bearer '+key},body:form,signal:options.signal,redirect:'error'});
   if(!response.ok){
     let code;try{code=(await require('./pdf-reader.cjs').readJson(response,options.signal)).error?.code;}catch{}
     const reasons={document_content_limit:'The website rejected the document content length; use a shorter document.',document_text_unavailable:'The website returned no text; scanned documents are unsupported.',upstream_upload_size_limit:'The website rejected the upload size including multipart overhead; use a smaller file.'};

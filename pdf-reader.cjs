@@ -1,7 +1,7 @@
 // ShanghaiTech GenAI PDF tool. Reads through DSH fs policy; never runs a shell.
 const {createHash} = require('node:crypto');
 const {conversationId}=require('./gateway-contract.cjs');
-const {gatewayBaseUrl} = require('./gateway-url.cjs');
+const {gatewayBaseUrl, gatewayConnection} = require('./gateway-url.cjs');
 const {gatewayApiKey} = require('./gateway-credentials.cjs');
 const PARSER_MODEL = 'deepseek-pro';
 const LOCAL_MAX_BYTES = 10 * 1024 * 1024;
@@ -30,11 +30,11 @@ async function readJson(response, signal) {
 }
 exports.readJson = readJson;
 
-async function gatewayJson(path, key, signal, options = {}) {
+async function gatewayJson(path, key, signal, options = {}, connection) {
   signal?.throwIfAborted();
   let response;
   try {
-    response = await fetch(gatewayBaseUrl() + path, {
+    response = await fetch(gatewayBaseUrl(connection) + path, {
       ...options, headers: {Authorization: 'Bearer ' + key}, signal, redirect: 'error',
     });
   } catch (error) {
@@ -82,8 +82,9 @@ exports.apply = function (ctx) {
       const data = await ctx.fs.readBytes(target, exec.signal, LOCAL_MAX_BYTES);
       if (data.length > LOCAL_MAX_BYTES) throw Error('Supply a PDF file of at most 10 MiB.');
       if (data.length < 5 || String.fromCharCode(...data.slice(0,5)) !== '%PDF-') throw Error('File is not a PDF.');
-      const key = await gatewayApiKey(ctx.credentials);
-      const capabilities = await gatewayJson('/capabilities', key, exec.signal);
+      const connection = await gatewayConnection(ctx.credentials);
+      const key = await gatewayApiKey(ctx.credentials, connection);
+      const capabilities = await gatewayJson('/capabilities', key, exec.signal, {}, connection);
       const parser = capabilities?.models?.find(model => model.id === PARSER_MODEL);
       const maxBytes = capabilities?.files?.max_bytes;
       if (capabilities?.protocol_version !== '1.1' || parser?.attachments?.pdf?.supported !== true || !Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw Error('The gateway does not advertise the supported DeepSeek PDF extraction contract. Update the gateway and plugin together.');
@@ -102,7 +103,7 @@ exports.apply = function (ctx) {
         form.set('model', PARSER_MODEL); form.set('purpose', 'user_data');
         if(extractionConversation)form.set('conversation_id',extractionConversation);
         form.set('file', new Blob([data], {type: 'application/pdf'}), 'document.pdf');
-        result = await gatewayJson('/files', key, exec.signal, {method: 'POST', body: form});
+        result = await gatewayJson('/files', key, exec.signal, {method: 'POST', body: form}, connection);
         if (result.kind !== 'document' || result.model !== PARSER_MODEL || result.status !== 'ready' || typeof result.parsed_content !== 'string' || !result.parsed_content.trim()) throw Error('The source returned no ready extracted PDF text.');
         if (result.sha256 !== digest || !Number.isSafeInteger(result.expires_at) || result.expires_at <= Math.floor(Date.now() / 1000)) throw Error('The gateway returned mismatched or expired PDF metadata.');
         if (extractions.size >= 4) extractions.delete(extractions.keys().next().value);

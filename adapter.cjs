@@ -1,19 +1,19 @@
 'use strict';
 const {PROVIDER}=require('./host.cjs');
-const {gatewayBaseUrl}=require('./gateway-url.cjs');
+const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
 const {uploadedFilePart}=require('./attachment-routing.cjs');
 const {conversationId,usageOf,collectMetadata,sourceText,replayState}=require('./gateway-contract.cjs');
 // Configured context capacities; retain the existing fallback for other models.
 const CONTEXT_WINDOWS = Object.freeze({'GPT-6.1-Terra':1050000,'gpt-6-astra':1050000,'GPT-6-Luna':1050000,'chatglm':128*1024,'qwen-instruct':256*1024,'Kimi-k3':200*1024,'deepseek-pro':1024*1024});
 function imageTarget(ref) { return {width:ref.width,height:ref.height,maxBytes:1024*1024}; }
-async function messagesOf(options,ctx,ErrorType=Error,imageHelpers={}) {
+async function messagesOf(options,ctx,ErrorType=Error,imageHelpers={},connection) {
   const messages=[];
   const preparedImages=new Map();
   if(options.system) messages.push({role:'system',content:options.system});
   for(const message of options.messages) {
     const parts=[],calls=[];
     for(const [index,block] of message.content.entries()) {
-      if(block.type==='text') parts.push(await uploadedFilePart(block.text,options,ctx,ErrorType,message,index)??{type:'text',text:block.text});
+      if(block.type==='text') parts.push(await uploadedFilePart(block.text,options,ctx,ErrorType,message,index,connection)??{type:'text',text:block.text});
       else if(block.type==='reasoning') { /* Provider-only reasoning is not replayed as user text. */ }
       else if(block.type==='tool-call' && message.role==='assistant') calls.push({id:block.id,type:'function',function:{name:block.name,arguments:block.arguments}});
       else if(block.type==='image' && ['user','tool'].includes(message.role)) {
@@ -82,18 +82,19 @@ function createAdapter(llm,host,ctx) {
     async resolveModel(provider,model,signal){const m=(await host.capabilities(signal)).models.find(m=>m.id===model);if(!m)throw new LlmError('Unknown ShanghaiTech GenAI model.','MODEL_NOT_FOUND');return this.modelInfo(m);}
     async *stream(options) {
       for(const field of ['temperature','stop','reasoningEffort'])if(options[field]!==undefined)throw new LlmError('Unsupported option: '+field,'UNSUPPORTED_OPTION');
+      const connection=await gatewayConnection(ctx.credentials ?? host.ctx?.credentials);
       // The agent/request waterfall owns the snapshot for a running step.
       const held=options.sessionId && host.snapshots.get(options.sessionId);
-      const flags=held?.model===options.model && (!llm.isAgentLoopRequest || llm.isAgentLoopRequest(options))?held.value:await host.snapshot(options.sessionId,options.model,options.signal);
+      const flags=held?.model===options.model && (!llm.isAgentLoopRequest || llm.isAgentLoopRequest(options))?held.value:await host.snapshot(options.sessionId,options.model,options.signal,connection);
       const controller=new AbortController();
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(330000),...(options.signal?[options.signal]:[])]);
       try {
         const conversation=conversationId(options.sessionId,options.purpose??'chat');
         await host.trackConversation?.(options.sessionId,conversation,signal);
-        const request={model:options.model,messages:await messagesOf({...options,signal},ctx,LlmError,llm),stream:true,max_tokens:options.maxTokens??4096,shanghaitech:flags,
+        const request={model:options.model,messages:await messagesOf({...options,signal},ctx,LlmError,llm,connection),stream:true,max_tokens:options.maxTokens??4096,shanghaitech:flags,
           stream_options:{include_usage:true},...conversation?{conversation_id:conversation}:{}};
         if(options.tools?.length) request.tools=options.tools.filter(tool=>tool.deferLoading!==true).map(tool=>({type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters}}));
-        const response=await host.fetch(gatewayBaseUrl()+'/chat/completions',{method:'POST',headers:{...await host.headers(),'Content-Type':'application/json'},body:JSON.stringify(request),signal,redirect:'error'});
+        const response=await host.fetch(gatewayBaseUrl(connection)+'/chat/completions',{method:'POST',headers:{...await host.headers(connection),'Content-Type':'application/json'},body:JSON.stringify(request),signal,redirect:'error'});
         if(!response.ok){let error;try{error=(await response.json()).error;}catch{}throw new LlmError(error?.message||'Gateway HTTP '+response.status,error?.code||'GATEWAY_HTTP_ERROR');}
         let nextIndex=0,finish,done=false;
         const metadata={};

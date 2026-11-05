@@ -4,7 +4,7 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {conversationId}=require('./gateway-contract.cjs');
-const {gatewayBaseUrl}=require('./gateway-url.cjs');
+const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
 const {readJson}=require('./pdf-reader.cjs');
 const RECORD='plugin:shanghaitech-genai/conversation';
 const gates=new Set();
@@ -99,8 +99,9 @@ class SessionDeletion {
       signal?.throwIfAborted();
       let website={deleted:false,deleted_groups:0};
       if(payload.deleteWebsite&&conversations.size){
-        const response=await this.host.fetch(gatewayBaseUrl()+'/conversations/delete',{
-          method:'POST',headers:{...await this.host.headers(),'Content-Type':'application/json'},
+        const connection=await gatewayConnection(this.host.ctx.credentials);
+        const response=await this.host.fetch(gatewayBaseUrl(connection)+'/conversations/delete',{
+          method:'POST',headers:{...await this.host.headers(connection),'Content-Type':'application/json'},
           body:JSON.stringify({conversation_ids:[...conversations]}),signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(330000)]),redirect:'error'});
         const value=await readJson(response,signal);
         if(!response.ok||value.deleted!==true||value.scope!=='upstream_history_and_gateway_mapping')fail('website-delete-failed','Website deletion was not confirmed; the local session was retained. Retry or explicitly choose local-only deletion.');

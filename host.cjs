@@ -1,6 +1,6 @@
 'use strict';
 const PROVIDER = 'shanghaitech-genai';
-const {gatewayBaseUrl, DEFAULT_BASE_URL: BASE} = require('./gateway-url.cjs');
+const {gatewayBaseUrl, gatewayConnection, DEFAULT_BASE_URL: BASE} = require('./gateway-url.cjs');
 const RECORD = 'plugin:shanghaitech-genai/options';
 const {gatewayApiKey} = require('./gateway-credentials.cjs');
 function fail(message, code = 'shanghaitech/invalid-options') { const e = new Error(message); e.code=code; throw e; }
@@ -24,24 +24,26 @@ class OptionsHost {
     this.ctx=ctx; this.append=append; this.attribution=attribution; this.fetch=fetchImpl;
     this.locks=new Map(); this.snapshots=new Map(); this.capabilityCache=null;
   }
-  async headers() {
-    const key=await gatewayApiKey(this.ctx.credentials);
+  async headers(connection) {
+    const key=await gatewayApiKey(this.ctx.credentials, connection);
     return {...this.attribution(),Authorization:'Bearer '+key};
   }
-  async capabilities(signal) {
+  async capabilities(signal, connection) {
     signal?.throwIfAborted();
-    if (this.capabilityCache && Date.now()-this.capabilityCache.time<15000) return this.capabilityCache.value;
-    const response=await this.fetch(gatewayBaseUrl()+'/capabilities',{headers:await this.headers(),signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(10000)]),redirect:'error'});
+    connection ??= await gatewayConnection(this.ctx.credentials);
+    const baseUrl=gatewayBaseUrl(connection);
+    if (this.capabilityCache?.baseUrl===baseUrl && this.capabilityCache.revision===connection?.revision && Date.now()-this.capabilityCache.time<15000) return this.capabilityCache.value;
+    const response=await this.fetch(baseUrl+'/capabilities',{headers:await this.headers(connection),signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(10000)]),redirect:'error'});
     if (!response.ok) fail('Gateway capabilities unavailable (HTTP '+response.status+').','shanghaitech/gateway-unavailable');
     const value=await response.json();
     if (value.protocol_version!=='1.1' || !Array.isArray(value.models)) fail('Upgrade the Docker gateway to protocol 1.1.','shanghaitech/protocol-mismatch');
     if(value.conversations?.request_field!=='conversation_id' || value.options?.sources_phase!=='after_chat_completion' ||
        value.usage?.stream_opt_in!=='stream_options.include_usage') fail('Rebuild the Docker gateway with conversation, source and usage support.','shanghaitech/protocol-mismatch');
-    this.capabilityCache={time:Date.now(),value}; return value;
+    this.capabilityCache={time:Date.now(),value,baseUrl,revision:connection?.revision}; return value;
   }
-  async state(sessionId, model, signal) {
+  async state(sessionId, model, signal, connection) {
     identity(sessionId,model);
-    const [caps, log]=await Promise.all([this.capabilities(signal),this.ctx.sessionQuery.readSession(sessionId)]);
+    const [caps, log]=await Promise.all([this.capabilities(signal,connection),this.ctx.sessionQuery.readSession(sessionId)]);
     signal?.throwIfAborted();
     const entry=caps.models.find(m=>m.id===model); if(!entry) fail('Model is not in the gateway catalog.');
     let {selected,saved}=fold(log.events,model);
@@ -85,15 +87,15 @@ class OptionsHost {
       return this.get(payload,signal);
     });
   }
-  async snapshot(sessionId,model,signal) {
-    return this.serial(sessionId??'',()=>this.snapshotUnlocked(sessionId,model,signal));
+  async snapshot(sessionId,model,signal,connection) {
+    return this.serial(sessionId??'',()=>this.snapshotUnlocked(sessionId,model,signal,new Set(),connection));
   }
-  async snapshotUnlocked(sessionId,model,signal,visited=new Set()) {
-    if(!sessionId) {const cap=(await this.capabilities(signal)).models.find(m=>m.id===model);if(!cap)fail('Unknown gateway model.');return {search:Boolean(cap.search.default),thinking:Boolean(cap.thinking.default)};}
-    const current=await this.state(sessionId,model,signal);
+  async snapshotUnlocked(sessionId,model,signal,visited=new Set(),connection) {
+    if(!sessionId) {const cap=(await this.capabilities(signal,connection)).models.find(m=>m.id===model);if(!cap)fail('Unknown gateway model.');return {search:Boolean(cap.search.default),thinking:Boolean(cap.thinking.default)};}
+    const current=await this.state(sessionId,model,signal,connection);
     if(current.session.origin==='subagent' && current.session.parentSession) {
       if(visited.has(sessionId))fail('Invalid parent-session cycle.');visited.add(sessionId);
-      return this.snapshotUnlocked(current.session.parentSession,model,signal,visited);
+      return this.snapshotUnlocked(current.session.parentSession,model,signal,visited,connection);
     }
     const flags=[current.search,current.thinking];
     const snapshot={search:Boolean(flags[0]),thinking:model==='Kimi-k3' && Boolean(flags[1])};

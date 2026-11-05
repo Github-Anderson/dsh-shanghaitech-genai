@@ -21,8 +21,10 @@ async function main(){
   if(endpoint.endsWith('.set')){assert.equal(payload.expectedRevision,row.revision);row={...row,search:payload.search,thinking:payload.thinking,revision:row.revision+1};saved.set(payload.model,row);}
   return {ok:true,value:row};
  }}}};
- plugin.apply(ctx);assert.equal(registrations.length,2);
- const face=registrations[0].inject('session-1');const other=registrations[1].inject('session-1');assert.equal(face.hooks.options,other.hooks.options);
+ plugin.apply(ctx);assert.equal(registrations.length,3);
+ const gateway=registrations.find(row=>row.name==='plugins.bundle.config');assert.equal(gateway.key,'dsh-shanghaitech-genai');
+ const options=registrations.filter(row=>row.name.startsWith('conversation.'));
+ const face=options[0].inject('session-1');const other=options[1].inject('session-1');assert.equal(face.hooks.options,other.hooks.options);
  await flush();assert.equal(face.hooks.options.getSnapshot().status,'ready');assert.equal(requests.length,1);
  let draftFiles,releaseCount=0;
  ctx.conversation={createDrafts:(id,files)=>{assert.equal(id,'session-1');draftFiles=files;return files.map((file,i)=>({id:'draft-'+i,file}));},releaseDraftAttachments:()=>{releaseCount++;}};

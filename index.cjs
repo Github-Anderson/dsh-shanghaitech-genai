@@ -9,4 +9,5 @@ exports.apply = async function (ctx) {
   const host = new OptionsHost(ctx, session.appendPluginRecord, llm.attributionHeaders);
   ctx.llm.registerAdapter(['shanghaitech-genai'], createAdapter(llm, host, ctx));
   host.install();
+  new (require('./gateway-settings.cjs').GatewaySettings)(host).install();
 };

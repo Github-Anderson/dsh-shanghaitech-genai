@@ -2,7 +2,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {createRequire}=require('node:module');
-const sdk=path.join(os.homedir(),'AppData/Local/Programs/DeepSeek Harness/resources/app.asar/dsh');
+const sdk=process.env.DSH_TEST_SDK_ROOT||path.join(os.homedir(),'AppData/Local/Programs/DeepSeek Harness/resources/app.asar/dsh');
 const shipped=createRequire(path.join(sdk,'package.json'));
 const {Context}=shipped('@deepseek-ai/cordis');
 const {Session,SessionStore,appendPluginRecord}=shipped('@deepseek-ai/dsh-session');
