@@ -10,8 +10,8 @@ async function main(){
  const caps={models:[{id:'Kimi-k3',search:{supported:true},thinking:{supported:true}},{id:'GPT-6.1-Terra',search:{supported:true},thinking:{supported:true}},{id:'deepseek-pro',search:{supported:true},thinking:{supported:false}}]};
  const saved=new Map();
  const directory=store({current:{provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'},pending:null,status:'ready'});
- const react={createElement:(type,props,...children)=>({type,props,children}),useRef:()=>({current:null}),useState:()=>['',()=>{}]};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'client.js'),'utf8'),{AbortController,File,window:{__ModuleLoader__:{load(row){plugin=row.factory(name=> name==='react'?react:{createSnapshotStore:store});}}}});
+ const react={createElement:(type,props,...children)=>({type,props,children}),useRef:()=>({current:null}),useState:()=>['',()=>{}],useEffect:()=>{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'client.js'),'utf8'),{AbortController,File,queueMicrotask,window:{__ModuleLoader__:{load(row){plugin=row.factory(name=> name==='react'?react:{createSnapshotStore:store});}}}});
  const ctx={modelDirectories:{directoryFor:()=>({store:directory,select(){selectedCalls++;}})},sessions:{scope:()=>({effect:fn=>effects.push(fn())}),subagentAddress:()=>undefined},on:()=>()=>{},effect:fn=>effects.push(fn()),locale:{register:(_ns,value)=>{locales=value;return()=>{};}},slots:{inject:(_n,fn)=>fn(),register:(row,view)=>{component=view;registrations.push(row);}},connection:{rpc:{async call(base,endpoint,payload,signal){
   assert.equal(base,'/api');assert(signal instanceof AbortSignal);requests.push({endpoint,payload});
   if(deferred) await deferred;
@@ -26,13 +26,21 @@ async function main(){
  const options=registrations.filter(row=>row.name.startsWith('conversation.'));
  const face=options[0].inject('session-1');const other=options[1].inject('session-1');assert.equal(face.hooks.options,other.hooks.options);
  await flush();assert.equal(face.hooks.options.getSnapshot().status,'ready');assert.equal(requests.length,1);
- let draftFiles,releaseCount=0;
- ctx.conversation={createDrafts:(id,files)=>{assert.equal(id,'session-1');draftFiles=files;return files.map((file,i)=>({id:'draft-'+i,file}));},releaseDraftAttachments:()=>{releaseCount++;}};
+ const leaveHero=face.enterView(), leaveComposer=other.enterView();
+ leaveHero();await flush();assert.equal(requests.length,1,'Replacing hero must not reset active options');
+ leaveComposer();await flush();
+ const leaveRestored=face.enterView();await flush();
+ assert.equal(requests.at(-1).payload.activate,true,'Reopening an existing view resets its transient options');
+ leaveRestored();
+ let draftFiles,releaseCount=0,draftSeq=0;
+ ctx.conversation={createDrafts:(id,files)=>{assert.equal(id,'session-1');draftFiles=files;return files.map((file,i)=>({id:'draft-'+draftSeq++,file}));},releaseDraftAttachments:()=>{releaseCount++;}};
+ let removed=[];
  const picked=[new File(['GIF89a'],'animated.gif',{type:'image/gif'}),new File(['marker'],'one.txt',{type:'text/plain'})];
- let ids;face.addWebsiteAttachments(picked,{addAttachments:value=>{ids=value;return true;}});
+ let ids;face.addWebsiteAttachments(picked,{addAttachments:value=>{ids=value;return true;},removeAttachment:id=>removed.push(id)});
  assert.deepEqual(Array.from(ids),['draft-0','draft-1']);assert(draftFiles.every(file=>file.type==='application/octet-stream'));
  assert.equal(await draftFiles[0].text(),'GIF89a');assert.equal(draftFiles[0].name,'animated.gif');
- assert.throws(()=>face.addWebsiteAttachments([new File(['# no'],'one.md')],{addAttachments:()=>true}),/attachmentsFormat/);
+ for(const ext of ['md','markdown','log','htm'])face.addWebsiteAttachments([new File(['text'],'file.'+ext)],{addAttachments:()=>true});
+ assert.throws(()=>face.addWebsiteAttachments([new File(['# no'],'one.doc')],{addAttachments:()=>true}),/attachmentsFormat/);
  assert.throws(()=>face.addWebsiteAttachments(picked,{addAttachments:()=>false}),/attachmentsLocked/);assert.equal(releaseCount,1);
  for(const option of ['search','thinking']){await face.selectOptions(option,true);assert.equal(face.hooks.options.getSnapshot().value[option],true);}
  assert.equal(selectedCalls,0,'Never encode flags in model/effort selection');
@@ -40,6 +48,7 @@ async function main(){
  reject=true;await face.selectOptions('search',false);assert.equal(face.hooks.options.getSnapshot().value.search,true);assert.equal(face.hooks.options.getSnapshot().status,'error');
  reject=false;await face.reload();assert.equal(face.hooks.options.getSnapshot().status,'ready');
  directory.set({current:{provider:'shanghaitech-genai',model:'GPT-6.1-Terra'},pending:null,status:'ready'});await flush();
+ assert.deepEqual(removed,['draft-0','draft-1'],'Model changes clear website draft attachments');
  await face.selectOptions('thinking',true);assert.equal(face.hooks.options.getSnapshot().value.thinking,true);
  for(const lang of ['en','zh']){
    const t=key=>{assert.equal(typeof locales[lang][key],'string','Every rendered string is translated');return locales[lang][key];};

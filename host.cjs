@@ -12,10 +12,12 @@ function fold(events, model) {
   for (const e of events) {
     const config = e.type === 'model/selection' ? e.data : e.type === 'request/header' ? e.data.header.config : undefined;
     if (config) {
+      const previous=pending??selected;
+      if(saved && previous && (previous.provider!==config.provider || previous.model!==config.model))saved={...saved,thinking:false};
       if(e.type==='model/selection') pending=config;
       else { selected=config; if(pending?.provider===config.provider && pending.model===config.model && pending.reasoningEffort===config.reasoningEffort)pending=undefined; }
     }
-    if (e.type===RECORD && e.data?.version===1 && e.data.model===model && typeof e.data.search==='boolean' && typeof e.data.thinking==='boolean') saved=e.data;
+    if (e.type===RECORD && e.data?.version===1 && typeof e.data.search==='boolean' && typeof e.data.thinking==='boolean') saved={...e.data,thinking:e.data.model===model && e.data.thinking};
   }
   return {selected:pending??selected,saved};
 }
@@ -23,21 +25,22 @@ class OptionsHost {
   constructor(ctx, append, attribution = () => ({}), fetchImpl = fetch) {
     this.ctx=ctx; this.append=append; this.attribution=attribution; this.fetch=fetchImpl;
     this.locks=new Map(); this.snapshots=new Map(); this.capabilityCache=null;
+    this.optionResets=new Map(); this.viewSearch=false;
   }
   async headers(connection) {
     const key=await gatewayApiKey(this.ctx.credentials, connection);
     return {...this.attribution(),Authorization:'Bearer '+key};
   }
-  async capabilities(signal, connection) {
+  async capabilities(signal, connection, refresh=false) {
     signal?.throwIfAborted();
     connection ??= await gatewayConnection(this.ctx.credentials);
     const baseUrl=gatewayBaseUrl(connection);
-    if (this.capabilityCache?.baseUrl===baseUrl && this.capabilityCache.revision===connection?.revision && Date.now()-this.capabilityCache.time<15000) return this.capabilityCache.value;
-    const response=await this.fetch(baseUrl+'/capabilities',{headers:await this.headers(connection),signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(10000)]),redirect:'error'});
+    if (!refresh && this.capabilityCache?.baseUrl===baseUrl && this.capabilityCache.revision===connection?.revision && Date.now()-this.capabilityCache.time<15000) return this.capabilityCache.value;
+    const response=await this.fetch(baseUrl+'/capabilities'+(refresh?'?refresh=true':''),{headers:await this.headers(connection),signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(10000)]),redirect:'error'});
     if (!response.ok) fail('Gateway capabilities unavailable (HTTP '+response.status+').','shanghaitech/gateway-unavailable');
     const value=await response.json();
     if (value.protocol_version!=='1.1' || !Array.isArray(value.models)) fail('Upgrade the Docker gateway to protocol 1.1.','shanghaitech/protocol-mismatch');
-    if(value.conversations?.request_field!=='conversation_id' || value.options?.sources_phase!=='after_chat_completion' ||
+    if(value.conversations?.request_field!=='conversation_id' || !['after_chat_completion','stream_metadata'].includes(value.options?.sources_phase) ||
        value.usage?.stream_opt_in!=='stream_options.include_usage') fail('Rebuild the Docker gateway with conversation, source and usage support.','shanghaitech/protocol-mismatch');
     this.capabilityCache={time:Date.now(),value,baseUrl,revision:connection?.revision}; return value;
   }
@@ -48,10 +51,21 @@ class OptionsHost {
     const entry=caps.models.find(m=>m.id===model); if(!entry) fail('Model is not in the gateway catalog.');
     let {selected,saved}=fold(log.events,model);
     selected ??= this.ctx.agentDefaultModel?.currentSelection();
+    const reset=this.optionResets.get(sessionId);
+    if(reset && (saved?.revision??0)<=reset.revision)saved={...saved,search:reset.search,thinking:false};
     const flags=[entry.search.default,entry.thinking.default];
     return {provider:PROVIDER,model,search:saved?.search ?? Boolean(flags[0]),thinking:entry.thinking.supported && (saved?.thinking ?? Boolean(flags[1])),revision:saved?.revision ?? 0,capabilities:caps,selected,session:log.session};
   }
-  async get(payload,signal) { const state=await this.state(payload.sessionId,payload.model,signal); if(state.session.origin==='subagent')fail('Subagent options are owned by its parent.'); const {selected,session,...publicState}=state; return publicState; }
+  async get(payload,signal) {
+    let state=await this.state(payload.sessionId,payload.model,signal);
+    if(state.session.origin==='subagent')fail('Subagent options are owned by its parent.');
+    if(payload.activate===true) {
+      this.optionResets.set(payload.sessionId,{revision:state.revision,search:this.viewSearch});
+      this.snapshots.delete(payload.sessionId);
+      state=await this.state(payload.sessionId,payload.model,signal);
+    }
+    const {selected,session,...publicState}=state; return publicState;
+  }
   async serial(key,fn) {
     const work=(this.locks.get(key)||Promise.resolve()).catch(()=>{}).then(fn);
     this.locks.set(key,work);try{return await work;}finally{if(this.locks.get(key)===work)this.locks.delete(key);}
@@ -84,6 +98,7 @@ class OptionsHost {
         this.append(live,RECORD,{version:1,model:payload.model,search:current.search,thinking:current.thinking,revision:current.revision+2});
         throw error;
       }
+      this.viewSearch=payload.search;
       return this.get(payload,signal);
     });
   }
@@ -98,7 +113,7 @@ class OptionsHost {
       return this.snapshotUnlocked(current.session.parentSession,model,signal,visited,connection);
     }
     const flags=[current.search,current.thinking];
-    const snapshot={search:Boolean(flags[0]),thinking:model==='Kimi-k3' && Boolean(flags[1])};
+    const snapshot={search:Boolean(flags[0]),thinking:Boolean(flags[1])};
     const live=this.ctx.sessions.get(sessionId);
     if(current.revision===0 && live) this.append(live,RECORD,{version:1,model,...snapshot,revision:1});
     if(live && !await this.ctx.sessions.flush(live))fail('Options cannot be persisted.');
@@ -127,7 +142,7 @@ class OptionsHost {
       this.snapshots.set(agent.session.id,{model:config.model,value:snapshot});
       const {reasoningEffort,...clean}=config; return clean;
     });
-    this.ctx.on('session/disposed',session=>this.snapshots.delete(session.id));
+    this.ctx.on('session/disposed',session=>{this.snapshots.delete(session.id);this.optionResets.delete(session.id);});
   }
 }
 module.exports={OptionsHost,fold,BASE,PROVIDER,RECORD};

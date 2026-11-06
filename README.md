@@ -1,14 +1,14 @@
 # ShanghaiTech GenAI Plugin
 
-`dsh-shanghaitech-genai@1.0.7`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
+`dsh-shanghaitech-genai@1.1.0`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
 
 ## 功能
 
 模型来源、Agent 预设及 provider ID 均为 `shanghaitech-genai`（界面显示 ShanghaiTech GenAI）。支持独立 Search/Thinking 选项、网站附件、来源与 usage，以及 Standard 原生工具和权限流程。PDF 文本工具名为 `shanghaitech_genai_read_pdf`。
 
-按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。搜索和思考以高亮表示启用状态，直接调用原网页对应功能；思考选项按网关能力显示，配套配置对 Kimi 和 GPT 系列开放。网页附件在发送时将原文件交给网站图片上传或文档解析接口。
+按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。可用模型和能力来自网关读取的网站配置，当前全部聊天模型都有 Search，除 Qwen 外均有 Thinking。新建、切换模型或恢复会话时关闭 Thinking，Search 保留当前选择。网站搜索进度、来源、用量和响应标识随同一次请求接收。
 
-网页附件接受 PNG、JPEG、WebP、GIF 图片（严格小于 20 MiB），以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、JSON 文档（严格小于 10 MiB）。2026-11-01 通过 DeepSeek 网站接口验证新增的六种文档均能提取合成标记；DOC、XML 被网站拒绝，保持关闭。需配套更新网关，并由所选模型开放附件能力；扫描件无文本时不提供 OCR 回退。独立 PDF 文本工具仍只处理 PDF。
+网页附件接受 PNG、JPEG、WebP、GIF 图片，以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON 文档，单文件均严格小于 10 MiB。网关按网站参数压缩大图，GIF 保留原文件；文档需由网站提取文字，扫描件不提供 OCR 回退。独立 PDF 文本工具仍只处理 PDF。
 
 ## 批量子代理
 
@@ -47,7 +47,7 @@ macOS（终端）：
 如果选择安装已发布版本，可在 DSH Desktop 插件安装界面提交以下来源：
 
 ```text
-github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
+github:Github-Anderson/dsh-shanghaitech-genai#v1.1.0
 ```
 
 在 **插件 → ShanghaiTech GenAI → 网关连接** 中设置网关密钥及可选的远程主机地址，点击“保存”。地址留空连接 `127.0.0.1:8000`；支持主机名、IP、`主机:端口` 和完整 HTTP(S) URL，仅填主机时默认使用 8000 端口。
@@ -61,7 +61,7 @@ github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
 已配置 DSH CLI 的环境也可安装到指定 profile：
 
 ```sh
-dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
+dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.1.0
 ```
 
 仓库中的运行入口为可直接加载的 JavaScript，无需编译；私有仓库的 GitHub 安装需要当前 Git 环境有读取权限。`private: true` 用于避免误发布到 npm。

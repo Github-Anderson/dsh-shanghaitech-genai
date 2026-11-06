@@ -35,8 +35,8 @@ async function main(){
  };
  const adapter=createAdapter(llm,host,ctx);core.adapters.set('shanghaitech-genai',{adapter});
  const ref=(name,raw)=>{const r={name,bytes:raw.length,attachmentId:'sha256:'+createHash('sha256').update(raw).digest('hex')};sources.set(r.attachmentId,raw);return r;};
- const run=async(session,content,source={kind:'user',rpcId:'synthetic'})=>{
-   const options=Object.freeze({provider:'shanghaitech-genai',model:'deepseek-pro',sessionId:session,maxTokens:512,messages:[llm.createUserMessage({source,content})],tools:[{name:'read',parameters:{type:'object'}}]});
+ const run=async(session,content,source={kind:'user',rpcId:'synthetic'},history=[])=>{
+   const options=Object.freeze({provider:'shanghaitech-genai',model:'deepseek-pro',sessionId:session,maxTokens:512,messages:[...history,llm.createUserMessage({source,content})],tools:[{name:'read',parameters:{type:'object'}}]});
    const prepared={registration:{adapter},config:{provider:'shanghaitech-genai',model:'deepseek-pro',maxTokens:512},modelInfo:{inputModalities:['text','image']},dispatch:o=>adapter.stream(o)};
    const stream=root.waterfall(core,'llm/stream',options,()=>llm.LlmRuntime.prototype.adapterStream.call(core,options,prepared));
    const out=[];for await(const c of stream)out.push(c);
@@ -60,7 +60,7 @@ async function main(){
    assert(uploads.some(u=>u.conversation===conversationId('parallel-a')&&u.bytes.equals(sources.get(txt.attachmentId))));
    assert(uploads.some(u=>u.conversation===conversationId('parallel-b')&&u.bytes.equals(sources.get(pdf.attachmentId))));
    for(const [ext,mime] of [['xls','application/vnd.ms-excel'],['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-     ['ppt','application/vnd.ms-powerpoint'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['html','text/html'],['json','application/json']]){
+     ['ppt','application/vnd.ms-powerpoint'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['html','text/html'],['htm','text/html'],['md','text/markdown'],['markdown','text/markdown'],['log','text/plain'],['json','application/json']]){
      const raw=Buffer.from('FORMAT_PROBE_'+ext),file=ref('probe.'+ext.toUpperCase(),raw);
      const sent=await run('format-'+ext,[{type:'file',attachment:file}]);
      assert.equal(sent.finish.reason.kind,'stop');assert.equal(uploads.at(-1).mime,mime);assert(uploads.at(-1).bytes.equals(raw));
@@ -68,12 +68,18 @@ async function main(){
    }
    denied=true;const count=uploads.length;const failure=await run('denied',[{type:'file',attachment:txt}]);
    assert.equal(failure.finish.reason.kind,'error');assert.equal(uploads.length,count);denied=false;
-   const bad=ref('one.md',Buffer.from('# no fallback'));const unsupported=await run('bad',[{type:'file',attachment:bad}]);
+   const bad=ref('one.rtf',Buffer.from('# no fallback'));const unsupported=await run('bad',[{type:'file',attachment:bad}]);
    assert.equal(unsupported.finish.reason.kind,'error');assert.equal(uploads.length,count);
    for(const ext of ['doc','xml']){
      const rejected=await run('reject-'+ext,[{type:'file',attachment:ref('probe.'+ext,Buffer.from('unsupported'))}]);
      assert.equal(rejected.finish.reason.kind,'error');assert.equal(uploads.length,count);
    }
+   const historical=llm.createUserMessage({source:{kind:'user',rpcId:'old'},content:[{type:'file',attachment:txt}]});
+   denied=true;
+   const followup=await run('restored',[{type:'text',text:'follow up'}],undefined,[historical]);
+   assert.equal(followup.finish.reason.kind,'stop');assert.equal(uploads.length,count);
+   assert(JSON.stringify(wire.at(-1).messages).includes('one.txt'));
+   denied=false;
    const settings=new GatewaySettings(host);
    for(const changeAddress of [true,false]){
      const keyA='synthetic-original-'.repeat(3),keyB='synthetic-rotated-'.repeat(3);

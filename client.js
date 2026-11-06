@@ -10,6 +10,7 @@ window.__ModuleLoader__.load({
 
     function Options(props) {
       const state = props.useOptions(value => value);
+      React.useEffect(() => props.enterView?.(), [props.enterView]);
       const picker = React.useRef(null);
       const [uploadError,setUploadError] = React.useState('');
       const [confirmDelete,setConfirmDelete] = React.useState(false);
@@ -29,7 +30,7 @@ window.__ModuleLoader__.load({
         model?.search.supported && toggle('search'),
         model?.thinking.supported && toggle('thinking'),
         props.inputActions && h('button',{type:'button',disabled,title:props.t('attachmentsHelp'),onClick:()=>picker.current?.click()},props.t('attachments')),
-        props.inputActions && h('input',{type:'file',hidden:true,multiple:true,accept:'.png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.csv,.docx,.xls,.xlsx,.ppt,.pptx,.html,.json',ref:picker,onChange:event=>{
+        props.inputActions && h('input',{type:'file',hidden:true,multiple:true,accept:'.png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.csv,.docx,.xls,.xlsx,.ppt,.pptx,.html,.htm,.md,.markdown,.log,.json',ref:picker,onChange:event=>{
           const files=Array.from(event.target.files??[]);event.target.value='';
           try{props.addWebsiteAttachments(files,props.inputActions);setUploadError('');}catch(error){setUploadError(error.message);}
         }}),
@@ -69,7 +70,7 @@ window.__ModuleLoader__.load({
       function accept(value) {
         setSaved(value); setAddress(value.baseUrl === 'http://127.0.0.1:8000/v1' ? '' : value.baseUrl); setApiKey(value.apiKey); setShowKey(false);
       }
-      async function reload() {
+      async function reload(activate=false) {
         setBusy(true); setError(''); setSuccess(false);
         try { accept(await request('get', {})); }
         catch(e) { if(e.name !== 'AbortError') setError(e.message); }
@@ -121,6 +122,25 @@ window.__ModuleLoader__.load({
       const directory = ctx.modelDirectories.directoryFor(sessionId);
       const store = createSnapshotStore({visible:false, model:null, value:null, status:'idle', error:false, modelPending:false});
       let generation = 0, disposed = false, active, identity;
+      let mountedViews = 0, enteredBefore = false, viewActive = false;
+      function enterView() {
+        if (disposed) return;
+        mountedViews++;
+        if (!viewActive) {
+          viewActive = true;
+          if (enteredBefore) { clearWebsiteDrafts(); void reload(true); }
+          enteredBefore = true;
+        }
+        return () => {
+          mountedViews--;
+          queueMicrotask(() => { if (!mountedViews) viewActive = false; });
+        };
+      }
+      const websiteDrafts = new Map();
+      function clearWebsiteDrafts() {
+        for (const [id, actions] of websiteDrafts) actions.removeAttachment?.(id);
+        websiteDrafts.clear();
+      }
       function publish(value) { if (!disposed) store.set({...store.getSnapshot(), ...value}); }
       async function rpc(endpoint, payload, signal) {
         const result = await ctx.connection.rpc.call('/api', endpoint, payload, signal);
@@ -130,14 +150,14 @@ window.__ModuleLoader__.load({
             typeof value.search !== 'boolean' || typeof value.thinking !== 'boolean' || !Number.isSafeInteger(value.revision)) throw Error('OPTIONS_INVALID');
         return value;
       }
-      async function reload() {
+      async function reload(activate=false) {
         const current = directory.store.getSnapshot().current;
         if (disposed || current?.provider !== 'shanghaitech-genai' || ctx.sessions.subagentAddress(sessionId) !== undefined) return;
         const turn = ++generation;
         active?.abort(); active = new AbortController();
         publish({status:'loading',error:false,value:null,model:current.model});
         try {
-          const value = await rpc('shanghaitech.options.get', {sessionId,model:current.model}, active.signal);
+          const value = await rpc('shanghaitech.options.get', {sessionId,model:current.model,...activate===true?{activate:true}:{}}, active.signal);
           if (turn === generation) publish({status:'ready',value,error:false});
         } catch (error) { if (turn === generation && !disposed) publish({status:'error',error:String(error.message || 'OPTIONS_UNAVAILABLE')}); }
       }
@@ -148,9 +168,10 @@ window.__ModuleLoader__.load({
         const nextIdentity = visible ? current.model : null;
         publish({visible, model:nextIdentity, modelPending:state.pending !== null || state.status !== 'ready'});
         if (identity !== nextIdentity) {
+          clearWebsiteDrafts();
           identity = nextIdentity; ++generation; active?.abort();
           publish({value:null,error:false,status:'idle'});
-          if (visible) void reload();
+          if (visible) void reload(true);
         }
       }
       async function selectOptions(option, enabled) {
@@ -189,7 +210,7 @@ window.__ModuleLoader__.load({
       const unsubscribe = directory.store.subscribe(sync);
       const reset = ctx.on('connection/reset', () => { identity = undefined; sync(); });
       sync();
-      return {hooks:{options:store}, selectOptions, reload, deleteSession, dispose() {disposed=true;++generation;active?.abort();unsubscribe();reset();}};
+      return {hooks:{options:store}, selectOptions, reload, deleteSession, enterView, registerDrafts(drafts, actions) {for (const draft of drafts) websiteDrafts.set(draft.id, actions);}, dispose() {disposed=true;++generation;active?.abort();unsubscribe();reset();}};
     }
 
     return {
@@ -204,25 +225,26 @@ window.__ModuleLoader__.load({
             const scope = ctx.sessions.scope(sessionId);
             scope.effect(() => () => {value.dispose();controllers.delete(sessionId);}, 'ShanghaiTech: session options');
           }
-          return {hooks:value.hooks,selectOptions:value.selectOptions,reload:value.reload,deleteSession:value.deleteSession,
+          return {hooks:value.hooks,selectOptions:value.selectOptions,reload:value.reload,deleteSession:value.deleteSession,enterView:value.enterView,
             addWebsiteAttachments(files,actions) {
               const state=value.hooks.options.getSnapshot();
               if(!state.visible||state.modelPending||state.status!=='ready')throw Error('attachmentsNotReady');
               for(const file of files){
                 const ext=file.name.split('.').pop().toLowerCase();
                 const image=['png','jpg','jpeg','webp','gif'].includes(ext);
-                if(!image&&!['pdf','txt','csv','docx','xls','xlsx','ppt','pptx','html','json'].includes(ext))throw Error('attachmentsFormat');
-                if(!file.size||file.size>=(image?20:10)*1024*1024)throw Error('attachmentsSize');
+                if(!image&&!['pdf','txt','csv','docx','xls','xlsx','ppt','pptx','html','htm','md','markdown','log','json'].includes(ext))throw Error('attachmentsFormat');
+                if(!file.size||file.size>=10*1024*1024)throw Error('attachmentsSize');
               }
               // Exact-byte file receipts preserve GIFs and avoid DSH's normal
               // image normalization. Storage, cancellation and access stay DSH-owned.
               const drafts=ctx.conversation.createDrafts(sessionId,files.map(file=>new File([file],file.name,{type:'application/octet-stream'})));
               if(!actions.addAttachments(drafts.map(draft=>draft.id))){ctx.conversation.releaseDraftAttachments(drafts);throw Error('attachmentsLocked');}
+              value.registerDrafts(drafts,actions);
             }};
         }
         ctx.effect(() => ctx.locale.register(NS, {
-          en:{"gatewayShowKey":"Show key","gatewayHideKey":"Hide key","gatewayUnsaved":"Unsaved changes. Requests still use the saved key.","gatewayTitle":"Gateway connection","gatewayKey":"Gateway key","gatewayKeyKeep":"Leave blank to keep the saved key","gatewayKeyPlaceholder":"Enter the gateway key","gatewayKeyConfigured":"The current key used for gateway requests. Changes take effect after saving.","gatewayKeyHelp":"Enter the access key for your gateway.","gatewayAddress":"Remote host address (optional)","gatewayAddressHelp":"Leave blank for local 127.0.0.1:8000. Accepts a hostname, IP, host:port or full HTTP(S) URL. Bare hosts use port 8000.","gatewaySave":"Save","gatewayWorking":"Working…","gatewaySaved":"Saved. Subsequent requests use the new settings.","invalidAddress":"Enter a valid host or HTTP(S) URL without credentials, query or fragment.","invalidSettings":"Invalid settings. Reload and try again.","invalidKey":"Use a gateway key with 32–4096 non-whitespace ASCII characters.","keyRequired":"Enter a gateway key.","settingsChanged":"Settings changed in another window. Reload before saving.","settingsUnavailable":"Could not read or save gateway settings. Reload and try again.",localDeleteFailed:'Website history was deleted, but local cleanup did not finish. Reload to inspect the local session.',deletedIndexWarning:'Session deleted. Search index refresh is pending; do not delete the session again.',deleteSession:'Delete session',deleteHelp:'Permanently delete this local DSH session and its subagents.',deleteConfirm:'Permanently delete this local session and its subagents? This cannot be undone.',deleteWebsite:'Also delete website history',deleteConfirmButton:'Permanently delete',deleteCancel:'Cancel',deleting:'Deleting…',deleted:'Session deleted.',deleteFailed:'Deletion did not complete. Reload to inspect the result. Website failures retain the local session; uncheck website history only if local-only deletion is intended.',label:'ShanghaiTech GenAI options',search:'Search',thinking:'Thinking',attachments:'Attachments',loading:'Loading options…',retry:'Reload',saveFailed:'Options unavailable or not saved. Reload to retry.',searchHelp:'Use the original website’s web search for the next request.',thinkingHelp:'Use the original website’s deep thinking for the next request.',attachmentsHelp:'Use the original website’s image upload and document parsing. Original files are uploaded when you send. Images <20 MiB; documents <10 MiB.',attachmentsNotReady:'Wait for the current model to be ready before adding attachments.',attachmentsFormat:'Supported images: PNG, JPEG, WebP, GIF. Verified documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, JSON.',attachmentsSize:'Select nonempty images below 20 MiB or documents below 10 MiB.',attachmentsLocked:'The input is locked. Try adding attachments later.'},
-          zh:{"gatewayShowKey":"显示密钥","gatewayHideKey":"隐藏密钥","gatewayUnsaved":"有未保存的修改，请求仍使用已保存的密钥。","gatewayTitle":"网关连接","gatewayKey":"网关密钥","gatewayKeyKeep":"留空保留已保存的密钥","gatewayKeyPlaceholder":"输入网关密钥","gatewayKeyConfigured":"当前请求使用的网关密钥；修改后点击保存生效。","gatewayKeyHelp":"填写网关的访问密钥。","gatewayAddress":"远程主机地址（可选）","gatewayAddressHelp":"留空连接本地 127.0.0.1:8000。支持主机名、IP、主机:端口或完整 HTTP(S) 地址；仅填主机时使用 8000 端口。","gatewaySave":"保存","gatewayWorking":"处理中…","gatewaySaved":"已保存，后续请求使用新配置。","invalidAddress":"请输入有效的主机地址或 HTTP(S) URL，不包含账号、密码、查询参数或片段。","invalidSettings":"配置格式无效，请重新载入。","invalidKey":"网关密钥须为 32–4096 个非空格 ASCII 字符。","keyRequired":"请输入网关密钥。","settingsChanged":"配置已在其他窗口更新，请重新载入后保存。","settingsUnavailable":"无法读取或保存网关配置，请重新载入后重试。",localDeleteFailed:'网站历史已删除，但本地清理未完成，请重新载入核对本地会话。',deletedIndexWarning:'会话已删除，搜索索引暂未刷新，无需重复删除。',deleteSession:'删除会话',deleteHelp:'永久删除当前 DSH 本地会话及其子代理会话。',deleteConfirm:'永久删除本地会话及其子代理？删除后不可恢复。',deleteWebsite:'同时删除网站历史',deleteConfirmButton:'永久删除',deleteCancel:'取消',deleting:'正在删除…',deleted:'会话已删除。',deleteFailed:'删除未完成，请重新载入核对。网站删除失败时保留本地会话；仅需删除本地时可取消勾选网站历史。',label:'ShanghaiTech GenAI 选项',search:'联网搜索',thinking:'深度思考',attachments:'网页附件',loading:'载入选项…',retry:'重新载入',saveFailed:'选项不可用或未保存，请重新载入。',searchHelp:'直接调用原网页的联网搜索功能，用于下一次请求。',thinkingHelp:'直接调用原网页的深度思考功能，用于下一次请求。',attachmentsHelp:'直接调用原网页的图片上传与文档解析功能，发送时上传原文件。图片 <20 MiB；文档 <10 MiB。',attachmentsNotReady:'请等待当前模型就绪后添加附件。',attachmentsFormat:'支持图片：PNG、JPEG、WebP、GIF；已验证文档：PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、JSON。',attachmentsSize:'请选择非空文件，图片须小于 20 MiB，文档须小于 10 MiB。',attachmentsLocked:'当前输入已锁定，请稍后再添加附件。'},
+          en:{"gatewayShowKey":"Show key","gatewayHideKey":"Hide key","gatewayUnsaved":"Unsaved changes. Requests still use the saved key.","gatewayTitle":"Gateway connection","gatewayKey":"Gateway key","gatewayKeyKeep":"Leave blank to keep the saved key","gatewayKeyPlaceholder":"Enter the gateway key","gatewayKeyConfigured":"The current key used for gateway requests. Changes take effect after saving.","gatewayKeyHelp":"Enter the access key for your gateway.","gatewayAddress":"Remote host address (optional)","gatewayAddressHelp":"Leave blank for local 127.0.0.1:8000. Accepts a hostname, IP, host:port or full HTTP(S) URL. Bare hosts use port 8000.","gatewaySave":"Save","gatewayWorking":"Working…","gatewaySaved":"Saved. Subsequent requests use the new settings.","invalidAddress":"Enter a valid host or HTTP(S) URL without credentials, query or fragment.","invalidSettings":"Invalid settings. Reload and try again.","invalidKey":"Use a gateway key with 32–4096 non-whitespace ASCII characters.","keyRequired":"Enter a gateway key.","settingsChanged":"Settings changed in another window. Reload before saving.","settingsUnavailable":"Could not read or save gateway settings. Reload and try again.",localDeleteFailed:'Website history was deleted, but local cleanup did not finish. Reload to inspect the local session.',deletedIndexWarning:'Session deleted. Search index refresh is pending; do not delete the session again.',deleteSession:'Delete session',deleteHelp:'Permanently delete this local DSH session and its subagents.',deleteConfirm:'Permanently delete this local session and its subagents? This cannot be undone.',deleteWebsite:'Also delete website history',deleteConfirmButton:'Permanently delete',deleteCancel:'Cancel',deleting:'Deleting…',deleted:'Session deleted.',deleteFailed:'Deletion did not complete. Reload to inspect the result. Website failures retain the local session; uncheck website history only if local-only deletion is intended.',label:'ShanghaiTech GenAI options',search:'Search',thinking:'Thinking',attachments:'Attachments',loading:'Loading options…',retry:'Reload',saveFailed:'Options unavailable or not saved. Reload to retry.',searchHelp:'Use the original website’s web search for the next request.',thinkingHelp:'Use the original website’s deep thinking for the next request.',attachmentsHelp:'Use the original website’s image upload and document parsing. Original files are uploaded when you send. Images <10 MiB; documents <10 MiB.',attachmentsNotReady:'Wait for the current model to be ready before adding attachments.',attachmentsFormat:'Supported images: PNG, JPEG, WebP, GIF. Website documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, HTM, MD, MARKDOWN, LOG, JSON.',attachmentsSize:'Select nonempty images below 10 MiB or documents below 10 MiB.',attachmentsLocked:'The input is locked. Try adding attachments later.'},
+          zh:{"gatewayShowKey":"显示密钥","gatewayHideKey":"隐藏密钥","gatewayUnsaved":"有未保存的修改，请求仍使用已保存的密钥。","gatewayTitle":"网关连接","gatewayKey":"网关密钥","gatewayKeyKeep":"留空保留已保存的密钥","gatewayKeyPlaceholder":"输入网关密钥","gatewayKeyConfigured":"当前请求使用的网关密钥；修改后点击保存生效。","gatewayKeyHelp":"填写网关的访问密钥。","gatewayAddress":"远程主机地址（可选）","gatewayAddressHelp":"留空连接本地 127.0.0.1:8000。支持主机名、IP、主机:端口或完整 HTTP(S) 地址；仅填主机时使用 8000 端口。","gatewaySave":"保存","gatewayWorking":"处理中…","gatewaySaved":"已保存，后续请求使用新配置。","invalidAddress":"请输入有效的主机地址或 HTTP(S) URL，不包含账号、密码、查询参数或片段。","invalidSettings":"配置格式无效，请重新载入。","invalidKey":"网关密钥须为 32–4096 个非空格 ASCII 字符。","keyRequired":"请输入网关密钥。","settingsChanged":"配置已在其他窗口更新，请重新载入后保存。","settingsUnavailable":"无法读取或保存网关配置，请重新载入后重试。",localDeleteFailed:'网站历史已删除，但本地清理未完成，请重新载入核对本地会话。',deletedIndexWarning:'会话已删除，搜索索引暂未刷新，无需重复删除。',deleteSession:'删除会话',deleteHelp:'永久删除当前 DSH 本地会话及其子代理会话。',deleteConfirm:'永久删除本地会话及其子代理？删除后不可恢复。',deleteWebsite:'同时删除网站历史',deleteConfirmButton:'永久删除',deleteCancel:'取消',deleting:'正在删除…',deleted:'会话已删除。',deleteFailed:'删除未完成，请重新载入核对。网站删除失败时保留本地会话；仅需删除本地时可取消勾选网站历史。',label:'ShanghaiTech GenAI 选项',search:'联网搜索',thinking:'深度思考',attachments:'网页附件',loading:'载入选项…',retry:'重新载入',saveFailed:'选项不可用或未保存，请重新载入。',searchHelp:'直接调用原网页的联网搜索功能，用于下一次请求。',thinkingHelp:'直接调用原网页的深度思考功能，用于下一次请求。',attachmentsHelp:'直接调用原网页的图片上传与文档解析功能，发送时上传原文件。图片 <10 MiB；文档 <10 MiB。',attachmentsNotReady:'请等待当前模型就绪后添加附件。',attachmentsFormat:'支持图片：PNG、JPEG、WebP、GIF；网页文档：PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON。',attachmentsSize:'请选择非空文件，图片须小于 10 MiB，文档须小于 10 MiB。',attachmentsLocked:'当前输入已锁定，请稍后再添加附件。'},
         }), 'ShanghaiTech: option labels');
         ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({name:'plugins.bundle.config',key:'dsh-shanghaitech-genai',locale:NS,
           inject:() => ({rpc:(action,payload,signal) => ctx.connection.rpc.call('/api','shanghaitech.gateway.'+action,payload,signal)})}, GatewaySettings));

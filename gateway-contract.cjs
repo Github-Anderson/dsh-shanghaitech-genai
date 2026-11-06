@@ -59,8 +59,10 @@ function collectMetadata(event,state) {
   if(value.upstream_metadata && typeof value.upstream_metadata==='object') {
     const counters={};
     for(const key of ['totalTokens','promptTokens','completionTokens'])if(count(value.upstream_metadata[key]))counters[key]=value.upstream_metadata[key];
+    for(const key of ['contentId','answerGroupId'])if(typeof value.upstream_metadata[key]==='string' && value.upstream_metadata[key].length<=256)counters[key]=value.upstream_metadata[key];
     if(Object.keys(counters).length)state.upstream_metadata=counters;
   }
+  if(['searching','searched'].includes(value.search_progress?.stage))state.search_progress={stage:value.search_progress.stage,...count(value.search_progress.count)?{count:value.search_progress.count}:{}};
   if(value.sources_status==='ready') {
     try {state.sources=sourcesOf(value.sources);state.sources_status='ready';delete state.sources_error;}
     catch {state.sources_status='failed';state.sources_error='sources_protocol_error';delete state.sources;}
