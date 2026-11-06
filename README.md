@@ -1,6 +1,6 @@
 # ShanghaiTech GenAI Plugin
 
-`dsh-shanghaitech-genai@1.0.7`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
+`dsh-shanghaitech-genai@1.1.0`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
 
 ## 功能
 
@@ -47,7 +47,7 @@ macOS（终端）：
 如果选择安装已发布版本，可在 DSH Desktop 插件安装界面提交以下来源：
 
 ```text
-github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
+github:Github-Anderson/dsh-shanghaitech-genai#v1.1.0
 ```
 
 在 **插件 → ShanghaiTech GenAI → 网关连接** 中设置网关密钥及可选的远程主机地址，点击“保存”。地址留空连接 `127.0.0.1:8000`；支持主机名、IP、`主机:端口` 和完整 HTTP(S) URL，仅填主机时默认使用 8000 端口。
@@ -61,7 +61,7 @@ github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
 已配置 DSH CLI 的环境也可安装到指定 profile：
 
 ```sh
-dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.0.7
+dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-genai#v1.1.0
 ```
 
 仓库中的运行入口为可直接加载的 JavaScript，无需编译；私有仓库的 GitHub 安装需要当前 Git 环境有读取权限。`private: true` 用于避免误发布到 npm。
