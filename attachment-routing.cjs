@@ -5,11 +5,11 @@ const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
 const {gatewayApiKey}=require('./gateway-credentials.cjs');
 const {conversationId}=require('./gateway-contract.cjs');
 const requests=new AsyncLocalStorage();
-const MAX_BYTES=20*1024*1024;
+const MAX_BYTES=10*1024*1024;
 const DOCUMENT_TYPES={'.pdf':'application/pdf','.txt':'text/plain','.csv':'text/csv','.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xls':'application/vnd.ms-excel','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.ppt':'application/vnd.ms-powerpoint','.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  '.html':'text/html','.json':'application/json'};
+  '.html':'text/html','.htm':'text/html','.md':'text/markdown','.markdown':'text/markdown','.log':'text/plain','.json':'application/json'};
 
 // Capture typed references before DSH unconditionally projects them to text.
 // Never infer filesystem access from model/user text that resembles a handle.
@@ -37,13 +37,16 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,c
   const entry=requests.getStore()?.get(message?.id+':'+index);
   if(!entry||entry.text!==text)return null;
   const ref=entry.ref;
+  const suffix=require('node:path').extname(ref.name??'').toLowerCase();
+  const current=options.messages.filter(m=>m.role==='user'&&(!m.source||m.source.kind==='user')).at(-1);
+  if(DOCUMENT_TYPES[suffix] && message!==current)return {type:'text',text:'【上传文件：'+(ref.name??'document')+'】'};
   options.signal?.throwIfAborted();
   const hostPath=ctx.attachments.fileHostPath(ref);
   const path=hostPath===undefined?undefined:ctx.fs.processPathFromHostPath(hostPath);
   if(!path)throw new ErrorType('DSH cannot access the uploaded attachment in this execution environment.','ATTACHMENT_ACCESS_DENIED');
   const target=await ctx.fs.resolve(path,{signal:options.signal});
   const info=await ctx.fs.stat(target,options.signal);
-  if(info.type!=='file'||info.size>=MAX_BYTES||ref.bytes>=MAX_BYTES)throw new ErrorType('Website images must be below 20 MiB; documents below 10 MiB.','UNSUPPORTED_CONTENT');
+  if(info.type!=='file'||info.size>=MAX_BYTES||ref.bytes>=MAX_BYTES)throw new ErrorType('Website images must be below 10 MiB; documents below 10 MiB.','UNSUPPORTED_CONTENT');
   const data=await ctx.fs.readBytes(target,options.signal,MAX_BYTES);
   if(data.length>MAX_BYTES||data.length!==ref.bytes||'sha256:'+createHash('sha256').update(data).digest('hex')!==ref.attachmentId)
     throw new ErrorType('The uploaded attachment failed its size or digest check.','ATTACHMENT_INTEGRITY_ERROR');
@@ -52,9 +55,9 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,c
     bytes[0]===255&&bytes[1]===216&&bytes[2]===255?'image/jpeg':
     bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP'?'image/webp':
     ['GIF87a','GIF89a'].includes(bytes.subarray(0,6).toString())?'image/gif':null;
-  const suffix=require('node:path').extname(ref.name??'').toLowerCase();
   const mime=imageMime??DOCUMENT_TYPES[suffix];
-  if(!mime)throw new ErrorType('Verified website documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, JSON. Other formats are unconfirmed or unsupported; use @path for local file operations.','UNSUPPORTED_CONTENT');
+  if(!imageMime && message!==current)return {type:'text',text:'【上传文件：'+(ref.name??'document')+'】'};
+  if(!mime)throw new ErrorType('Website documents: PDF, TXT, CSV, DOCX, XLS, XLSX, PPT, PPTX, HTML, HTM, MD, MARKDOWN, LOG, JSON. Other formats are unconfirmed or unsupported; use @path for local file operations.','UNSUPPORTED_CONTENT');
   if(!imageMime&&bytes.length>=10*1024*1024)throw new ErrorType('Website documents must be below 10 MiB.','UNSUPPORTED_CONTENT');
   connection ??= await gatewayConnection(ctx.credentials);
   const baseUrl=gatewayBaseUrl(connection);
@@ -62,7 +65,7 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,c
   const form=new FormData();
   form.set('model',options.model);form.set('purpose','user_data');
   form.set('include_content','false');
-  const conversation=conversationId(options.sessionId,options.purpose??'chat');
+  const conversation=options.gatewayConversation??conversationId(options.sessionId,options.purpose??'chat');
   if(conversation)form.set('conversation_id',conversation);
   // DSH display names are untrusted; avoid leaking paths to upstream.
   form.set('file',new Blob([data],{type:mime}),'attachment'+(imageMime?{ 'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp','image/gif':'.gif'}[imageMime]:suffix));

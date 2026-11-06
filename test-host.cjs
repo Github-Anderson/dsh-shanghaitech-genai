@@ -46,6 +46,30 @@ async function main(){
   }
   assert.deepEqual(adapter.providerRetryPolicy().retryableCodes,['queue_full','queue_timeout']);
   assert.equal((await adapter.resolveModel('shanghaitech-genai','Kimi-k3')).reasoning,undefined);
+  host.fetch=async()=>Response.json(capabilities);
+  for(const model of ['GPT-6.1-Sol','deepseek-pro','chatglm','qwen-instruct']) {
+    const cap={id:model,name:model,search:{supported:true,default:false},thinking:{supported:model!=='qwen-instruct',default:false},max_output_tokens:16384,attachments:{images:{supported:true}}};
+    capabilities.models=capabilities.models.filter(m=>m.id!==model).concat(cap);
+    host.capabilityCache=null;
+    events.push({type:'model/selection',data:{provider:'shanghaitech-genai',model}});
+    let state=await host.get({sessionId:'s',model,activate:true});
+    assert.equal(state.thinking,false);assert.equal(state.search,true);
+    state=await host.set({sessionId:'s',model,search:true,thinking:model!=='qwen-instruct',expectedRevision:state.revision});
+    assert.equal((await host.snapshot('s',model)).thinking,model!=='qwen-instruct');
+    state=await host.get({sessionId:'s',model,activate:true});
+    assert.equal(state.thinking,false,'Restoring a conversation resets Thinking');
+    assert.equal(state.search,true,'Restoring preserves the active Search choice');
+  }
+  host.fetch=async(url,init)=>{wire=JSON.parse(init.body);return streamResponse([data({choices:[{delta:{content:'answer'},finish_reason:'stop'}]}),'data: [DONE]\n\n']);};
+  host.snapshots.clear();
+  await collect(adapter.stream({...options,model:'qwen-instruct',maxTokens:65536,purpose:'compaction'}));
+  assert.equal(wire.max_tokens,16384,'Native compaction uses the website output ceiling');
+  let catalogCalls=[];
+  host.fetch=async(url)=>{catalogCalls.push(url);return Response.json(capabilities);};
+  host.capabilityCache=null;
+  await host.capabilities();await host.capabilities();assert.equal(catalogCalls.length,1);
+  await adapter.listModels();assert.equal(catalogCalls.length,2);
+  assert(catalogCalls.at(-1).endsWith('/capabilities?refresh=true'));
   console.log('PASS: host persistence, configured defaults, revisions, failed-save compensation, subagent inheritance, RPC, request snapshots, text/reasoning/tools, truncation/errors, unknown usage.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

@@ -6,9 +6,9 @@
 
 模型来源、Agent 预设及 provider ID 均为 `shanghaitech-genai`（界面显示 ShanghaiTech GenAI）。支持独立 Search/Thinking 选项、网站附件、来源与 usage，以及 Standard 原生工具和权限流程。PDF 文本工具名为 `shanghaitech_genai_read_pdf`。
 
-按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。搜索和思考以高亮表示启用状态，直接调用原网页对应功能；思考选项按网关能力显示，配套配置对 Kimi 和 GPT 系列开放。网页附件在发送时将原文件交给网站图片上传或文档解析接口。
+按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。可用模型和能力来自网关读取的网站配置，当前全部聊天模型都有 Search，除 Qwen 外均有 Thinking。新建、切换模型或恢复会话时关闭 Thinking，Search 保留当前选择。网站搜索进度、来源、用量和响应标识随同一次请求接收。
 
-网页附件接受 PNG、JPEG、WebP、GIF 图片（严格小于 20 MiB），以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、JSON 文档（严格小于 10 MiB）。2026-11-01 通过 DeepSeek 网站接口验证新增的六种文档均能提取合成标记；DOC、XML 被网站拒绝，保持关闭。需配套更新网关，并由所选模型开放附件能力；扫描件无文本时不提供 OCR 回退。独立 PDF 文本工具仍只处理 PDF。
+网页附件接受 PNG、JPEG、WebP、GIF 图片，以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON 文档，单文件均严格小于 10 MiB。网关按网站参数压缩大图，GIF 保留原文件；文档需由网站提取文字，扫描件不提供 OCR 回退。独立 PDF 文本工具仍只处理 PDF。
 
 ## 批量子代理
 

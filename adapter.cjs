@@ -83,8 +83,8 @@ function createAdapter(llm,host,ctx) {
     imageRequestTarget(_provider,_model,image){return imageTarget(image);}
     providerInfo(){return {id:PROVIDER,name:'ShanghaiTech GenAI'};}
     providerRetryPolicy(){return llm.resolveRetryPolicy({mode:'normal',maxRetries:8,retryableCodes:[...QUEUE_RETRY_CODES],backoff:{initialDelayMs:1000,maxDelayMs:8000,jitterRatio:0.1}},'ShanghaiTech GenAI');}
-    modelInfo(m){return {provider:PROVIDER,id:m.id,name:m.name,inputModalities:m.attachments.images.supported?['text','image']:['text'],context:{contextWindow:CONTEXT_WINDOWS[m.id]??8192},defaultMaxTokens:4096};}
-    async listModels(){return (await host.capabilities()).models.map(m=>this.modelInfo(m));}
+    modelInfo(m){return {provider:PROVIDER,id:m.id,name:m.name,inputModalities:m.attachments.images.supported?['text','image']:['text'],context:{contextWindow:CONTEXT_WINDOWS[m.id]??8192},defaultMaxTokens:m.max_output_tokens??16384};}
+    async listModels(){return (await host.capabilities(undefined,undefined,true)).models.map(m=>this.modelInfo(m));}
     async resolveModel(provider,model,signal){const m=(await host.capabilities(signal)).models.find(m=>m.id===model);if(!m)throw new LlmError('Unknown ShanghaiTech GenAI model.','MODEL_NOT_FOUND');return this.modelInfo(m);}
     async *stream(options) {
       for(const field of ['temperature','stop','reasoningEffort'])if(options[field]!==undefined)throw new LlmError('Unsupported option: '+field,'UNSUPPORTED_OPTION');
@@ -97,7 +97,9 @@ function createAdapter(llm,host,ctx) {
       try {
         const conversation=conversationId(options.sessionId,options.purpose??'chat');
         await host.trackConversation?.(options.sessionId,conversation,signal);
-        const request={model:options.model,messages:await messagesOf({...options,signal},ctx,LlmError,llm,connection),stream:true,max_tokens:options.maxTokens??4096,shanghaitech:flags,
+        const cap=(await host.capabilities?.(signal,connection))?.models.find(m=>m.id===options.model);
+        const maxTokens=Number.isSafeInteger(cap?.max_output_tokens) && cap.max_output_tokens>0 && Number.isSafeInteger(options.maxTokens) && options.maxTokens>0 ? Math.min(options.maxTokens,cap.max_output_tokens) : options.maxTokens;
+        const request={model:options.model,messages:await messagesOf({...options,signal,gatewayConversation:conversation},ctx,LlmError,llm,connection),stream:true,...maxTokens!==undefined?{max_tokens:maxTokens}:{},shanghaitech:flags,
           stream_options:{include_usage:true},...conversation?{conversation_id:conversation}:{}};
         if(options.tools?.length) request.tools=options.tools.filter(tool=>tool.deferLoading!==true).map(tool=>({type:'function',function:{name:tool.name,description:tool.description,parameters:tool.parameters}}));
         const response=await host.fetch(gatewayBaseUrl(connection)+'/chat/completions',{method:'POST',headers:{...await host.headers(connection),'Content-Type':'application/json'},body:JSON.stringify(request),signal,redirect:'error'});

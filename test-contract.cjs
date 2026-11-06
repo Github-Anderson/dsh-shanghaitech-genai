@@ -58,6 +58,9 @@ async function main(){
   assert(!result.chunks.some(c=>c.text?.includes('搜索来源')));
   await assert.rejects(exercise({includeText:false}),e=>e.code==='EMPTY_RESPONSE');
   await assert.rejects(exercise({afterFinish:true}),e=>e.code==='INVALID_RESPONSE');
+  result=await exercise({metadata:{search_progress:{stage:'searched',count:20},sources_status:'ready',sources,upstream_metadata:{promptTokens:3908,contentId:'content-id',answerGroupId:'answer-id'}}});
+  assert.equal(result.replay.search_progress.count,20);assert.equal(result.replay.upstream_metadata.answerGroupId,'answer-id');
+  assert.equal(result.replay.upstream_metadata.contentId,'content-id');
   const host=new OptionsHost({credentials:{resolve:async()=>({value:'synthetic'})}},()=>{},()=>({}),
     async()=>Response.json({protocol_version:'1.1',models:[]}));
   await assert.rejects(host.capabilities(),e=>e.code==='shanghaitech/protocol-mismatch');
