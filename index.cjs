@@ -5,9 +5,11 @@ exports.apply = async function (ctx) {
   const session = await import('@deepseek-ai/dsh-session');
   const { OptionsHost } = require('./host.cjs');
   const { createAdapter } = require('./adapter.cjs');
-  require('./attachment-routing.cjs').installAttachmentRouting(ctx);
+  const { version } = require('@deepseek-ai/dsh-session/package.json');
   const host = new OptionsHost(ctx, session.appendPluginRecord, llm.attributionHeaders);
+  require('./attachment-routing.cjs').installAttachmentRouting(ctx, options =>
+    llm.isAgentLoopRequest(options) ? host.stepOptions(options) : undefined);
   ctx.llm.registerAdapter(['shanghaitech-genai'], createAdapter(llm, host, ctx));
-  host.install();
+  host.install(version);
   new (require('./gateway-settings.cjs').GatewaySettings)(host).install();
 };

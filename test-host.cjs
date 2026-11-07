@@ -2,10 +2,16 @@
 const assert=require('node:assert/strict');
 const {OptionsHost,RECORD,fold}=require('./host.cjs');
 const {createAdapter,messagesOf}=require('./adapter.cjs');
+const {installAttachmentRouting}=require('./attachment-routing.cjs');
 const capabilities={protocol_version:'1.1',conversations:{request_field:'conversation_id'},options:{sources_phase:'after_chat_completion'},usage:{stream_opt_in:'stream_options.include_usage'},models:['Kimi-k3','deepseek-pro'].map(id=>({id,name:id,search:{supported:true,default:false},thinking:{supported:id==='Kimi-k3',default:false},attachments:{images:{supported:id==='deepseek-pro'}}}))};
 const events=[{type:'model/selection',data:{provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'}}];
-const live={id:'s',snapshotEvents:()=>structuredClone(events)};let flush=true;const routes=[],listeners={};
-const ctx={credentials:{resolve:async()=>({value:'fake-local-key'})},sessionQuery:{readSession:async id=>({session:{id,origin:id==='child'?'subagent':'user',...(id==='child'?{parentSession:'s'}:{})},events:structuredClone(events)})},sessions:{get:id=>id==='s'?live:undefined,flush:async()=>flush},sessionController:{selectModel:async()=>{}},effect:f=>f(),connection:{fetch:{register:r=>{routes.push(r);return()=>{};}}},on:(name,handler)=>{listeners[name]=handler;}};
+const live={id:'s',snapshotEvents:()=>structuredClone(events)};
+let flush=true, attached=true, resumes=0;
+const routes=[], listeners={};
+const ctx={credentials:{resolve:async()=>({value:'fake-local-key'})},sessionQuery:{readSession:async id=>({session:{id,origin:id==='child'?'subagent':'user',...(id==='child'?{parentSession:'s'}:{})},events:structuredClone(events)})},sessions:{get:id=>id==='s'&&attached?live:undefined,flush:async()=>flush},sessionController:{
+  selectModel:()=>assert.fail('Saving plugin options must not write the DSH profile default'),
+  resolveAgent:async id=>{assert.equal(id,'s');resumes++;attached=true;return {agent:{session:live}};}
+},effect:f=>f(),connection:{fetch:{register:r=>{routes.push(r);return()=>{};}}},on:(name,handler)=>{listeners[name]=handler;}};
 const host=new OptionsHost(ctx,(_s,type,data)=>events.push({type,data}),()=>({'x-client':'test'}),async()=>Response.json(capabilities));
 class LlmError extends Error{constructor(message,code){super(message);this.code=code;}}
 class LlmAdapter{async prepareCall(p,m,s){return {model:await this.resolveModel(p,m,s),stream:o=>this.stream(o)}}}
@@ -16,7 +22,10 @@ async function collect(iter){const items=[];for await(const i of iter)items.push
 async function main(){
   const initial=events.splice(0);ctx.agentDefaultModel={currentSelection:()=>({provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'})};
   assert.equal((await host.get({sessionId:'s',model:'Kimi-k3'})).thinking,false);
-  await host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:false,expectedRevision:0});assert.equal(events.at(-1).type,RECORD);
+  attached=false;
+  await host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:false,expectedRevision:0});
+  assert.equal(resumes,1);
+  assert.deepEqual(events.map(e=>e.type),[RECORD],'A cold writer is acquired without selecting a model');
   events.splice(0,events.length,...initial);delete ctx.agentDefaultModel;
   assert.deepEqual((({search,thinking})=>({search,thinking}))(await host.get({sessionId:'s',model:'Kimi-k3'})),{search:false,thinking:false});
   const saved=await host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:true,expectedRevision:0});assert.equal(saved.revision,1);
@@ -25,9 +34,39 @@ async function main(){
   flush=false;await assert.rejects(host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:true,expectedRevision:2}));assert.equal((await host.get({sessionId:'s',model:'Kimi-k3'})).search,true);await assert.rejects(host.snapshot('s','Kimi-k3'));flush=true;
   assert.deepEqual(await host.snapshot('child','Kimi-k3'),{search:true,thinking:false});await assert.rejects(host.get({sessionId:'child',model:'Kimi-k3'}),/parent/);
   const restored=new OptionsHost(ctx,host.append,host.attribution,host.fetch);assert.equal((await restored.get({sessionId:'s',model:'Kimi-k3'})).revision,4);
-  host.install();assert.equal(routes.length,3);
+  host.install('0.2.2-rc.1');
+  assert.deepEqual(routes.map(route=>route.path),[
+    '/api/shanghaitech.session.deleteEligibility','/api/shanghaitech.session.delete',
+    '/api/shanghaitech.options.get','/api/shanghaitech.options.set',
+  ]);
+  assert.equal(listeners['agent/request'],undefined);
   const reply=await routes.find(row=>row.path==='/api/shanghaitech.options.get').fetch(new Request('http://local/api/shanghaitech.options.get',{method:'POST',body:JSON.stringify({type:'client-request',rpcId:'r',method:'shanghaitech.options.get',payload:{sessionId:'s',model:'Kimi-k3'}})}));assert.equal((await reply.json()).result.value.thinking,false);
-  const config=await listeners['agent/request']({agent:{session:live}},async()=>({provider:'shanghaitech-genai',model:'Kimi-k3',reasoningEffort:'high'}));assert.equal(config.reasoningEffort,undefined);assert.equal(host.snapshots.get('s').value.thinking,false);
+  const route={provider:'shanghaitech-genai',model:'Kimi-k3'};
+  const oldChoice={...route,reasoningEffort:'high'};
+  const legacy={session:live,model:{
+    current:()=>fold(events,route.model).selected,
+    select:selection=>events.push({type:'model/selection',data:selection})
+  }};
+  listeners['agent/created']({agent:legacy,source:'startup'});
+  assert.deepEqual(legacy.model.current(),oldChoice);
+  const beforeMigration=events.slice();
+  listeners['agent/created']({agent:legacy,source:'resume'});
+  listeners['agent/created']({agent:legacy,source:'resume'});
+  assert.deepEqual(events,[...beforeMigration,{type:'model/selection',data:route}],'Restore appends one local selection and retains history');
+  const foreign={session:live,model:{current:()=>({...oldChoice,provider:'deepseek'}),select:()=>assert.fail('Foreign provider')}};
+  listeners['agent/created']({agent:foreign,source:'resume'});
+
+  const signal=new AbortController().signal;
+  const preStep={agent:legacy,modelSelection:route,signal};
+  const enter=Object.freeze({kind:'enter',messages:[]});
+  const reject=Object.freeze({kind:'reject'});
+  assert.equal(await listeners['agent/pre-step'](preStep,async()=>reject),reject);
+  assert.equal(host.stepOptions({...route,sessionId:'s',signal}),undefined);
+  assert.equal(await listeners['agent/pre-step']({...preStep,modelSelection:{provider:'deepseek',model:'native'}},async()=>enter),enter);
+  assert.equal(host.stepOptions({...route,sessionId:'s',signal}),undefined);
+  assert.equal(await listeners['agent/pre-step'](preStep,async()=>enter),enter);
+  assert.deepEqual(host.stepOptions({...route,sessionId:'s',signal}),{search:true,thinking:false});
+  assert.equal(host.stepOptions({...route,sessionId:'other',signal}),undefined);
   let wire;host.fetch=async(url,init)=>{wire=JSON.parse(init.body);return streamResponse([data({choices:[{delta:{reasoning_content:'思考'}}]}).slice(0,13),data({choices:[{delta:{reasoning_content:'思考'}}]}).slice(13),data({choices:[{delta:{content:'答案'},finish_reason:'stop'}]}),'data: [DONE]\n\n']);};
   const adapter=createAdapter(llm,host,ctx);const options={provider:'shanghaitech-genai',model:'Kimi-k3',sessionId:'s',system:'sys',messages:[{role:'user',content:[{type:'text',text:'hello'}]}]};
   const chunks=await collect(adapter.stream(options));assert.deepEqual(wire.shanghaitech,{search:true,thinking:false});assert(!('reasoning_effort'in wire));assert.equal(wire.messages[0].content,'sys');assert.equal(chunks.at(-1).reason.kind,'stop');assert.equal(chunks.at(-1).replayState.response.kind,'shanghaitech');assert(!chunks.some(c=>c.type==='usage'));assert(chunks.some(c=>c.type==='reasoning-delta'));
@@ -61,7 +100,6 @@ async function main(){
     assert.equal(state.search,true,'Restoring preserves the active Search choice');
   }
   host.fetch=async(url,init)=>{wire=JSON.parse(init.body);return streamResponse([data({choices:[{delta:{content:'answer'},finish_reason:'stop'}]}),'data: [DONE]\n\n']);};
-  host.snapshots.clear();
   await collect(adapter.stream({...options,model:'qwen-instruct',maxTokens:65536,purpose:'compaction'}));
   assert.equal(wire.max_tokens,16384,'Native compaction uses the website output ceiling');
   let catalogCalls=[];
@@ -70,6 +108,27 @@ async function main(){
   await host.capabilities();await host.capabilities();assert.equal(catalogCalls.length,1);
   await adapter.listModels();assert.equal(catalogCalls.length,2);
   assert(catalogCalls.at(-1).endsWith('/capabilities?refresh=true'));
-  console.log('PASS: host persistence, configured defaults, revisions, failed-save compensation, subagent inheritance, RPC, request snapshots, text/reasoning/tools, truncation/errors, unknown usage.');
+  installAttachmentRouting(ctx, request=>request.main?host.stepOptions(request):undefined);
+  events.push({type:'model/selection',data:route});
+  const step={...options,signal,main:true};
+  await listeners['agent/pre-step'](preStep,async()=>enter);
+  const initialFlags=host.stepOptions(step);
+  const state=await host.get({sessionId:'s',model:route.model});
+  await host.set({sessionId:'s',model:route.model,search:!initialFlags.search,thinking:true,expectedRevision:state.revision});
+  host.fetch=async(url,init)=>{wire=JSON.parse(init.body);return streamResponse([data({choices:[{delta:{content:'answer'},finish_reason:'stop'}]}),'data: [DONE]\n\n']);};
+  const run=request=>collect(listeners['llm/stream'](request,()=>adapter.stream({...request})));
+  await run(step);
+  assert.deepEqual(wire.shanghaitech,initialFlags);
+  await run({...step,main:false,purpose:'compaction'});
+  assert.deepEqual(wire.shanghaitech,{search:!initialFlags.search,thinking:true});
+  await run({...step});
+  assert.deepEqual(wire.shanghaitech,initialFlags,'A retry keeps the accepted step settings');
+  await listeners['agent/pre-step'](preStep,async()=>enter);
+  await run(step);
+  assert.deepEqual(wire.shanghaitech,{search:!initialFlags.search,thinking:true},'The next step reads updated settings');
+  const canceled=AbortSignal.abort();
+  await assert.rejects(listeners['agent/pre-step']({...preStep,signal:canceled},async()=>enter),{name:'AbortError'});
+  assert.equal(host.stepOptions({...step,signal:canceled}),undefined);
+  console.log('PASS: local legacy restore, profile default isolation, step retries and auxiliary calls, option persistence, provider isolation, and gateway contract.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

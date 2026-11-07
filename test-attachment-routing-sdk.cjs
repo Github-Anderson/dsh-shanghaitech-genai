@@ -20,7 +20,8 @@ async function main(){
    forAdapter:llm.LlmRuntime.prototype.forAdapter};
  core.fileRequestText=r=>llm.LlmRuntime.prototype.fileRequestText.call(core,r);
  const ctx={on:(...args)=>root.on(...args),llm:core,fs,attachments:{fileHostPath:r=>r.attachmentId},credentials:{resolve:async()=>({value:'synthetic-key'}),readRecord:async()=>structuredClone(record),modifyRecord:async(_id,fn)=>{record=await fn(structuredClone(record));}}};
- installAttachmentRouting(ctx);
+ const stepFlags=Object.freeze({search:true,thinking:false});
+ installAttachmentRouting(ctx, options=>llm.isAgentLoopRequest(options)?stepFlags:undefined);
  const host={ctx, snapshots:new Map(),snapshot:async()=>({search:false,thinking:false}),headers:async connection=>({Authorization:'Bearer '+await gatewayApiKey(ctx.credentials,connection)}),fetch:async(url,init)=>{
    calls.push({url,key:init.headers.Authorization,conversation:JSON.parse(init.body).conversation_id});
    wire.push(JSON.parse(init.body));return new Response('data: '+JSON.stringify({choices:[{delta:{content:'synthetic answer'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
@@ -35,17 +36,19 @@ async function main(){
  };
  const adapter=createAdapter(llm,host,ctx);core.adapters.set('shanghaitech-genai',{adapter});
  const ref=(name,raw)=>{const r={name,bytes:raw.length,attachmentId:'sha256:'+createHash('sha256').update(raw).digest('hex')};sources.set(r.attachmentId,raw);return r;};
- const run=async(session,content,source={kind:'user',rpcId:'synthetic'},history=[])=>{
+ const run=async(session,content,source={kind:'user',rpcId:'synthetic'},history=[],mainLoop=false)=>{
    const options=Object.freeze({provider:'shanghaitech-genai',model:'deepseek-pro',sessionId:session,maxTokens:512,messages:[...history,llm.createUserMessage({source,content})],tools:[{name:'read',parameters:{type:'object'}}]});
    const prepared={registration:{adapter},config:{provider:'shanghaitech-genai',model:'deepseek-pro',maxTokens:512},modelInfo:{inputModalities:['text','image']},dispatch:o=>adapter.stream(o)};
+   if (mainLoop) llm.markAgentLoopRequest(options);
    const stream=root.waterfall(core,'llm/stream',options,()=>llm.LlmRuntime.prototype.adapterStream.call(core,options,prepared));
    const out=[];for await(const c of stream)out.push(c);
    const finish=out.find(c=>c.type==='finish');return {finish,options};
  };
  try {
    const txt=ref('one.txt',Buffer.from('TXT_MARKER')),pdf=ref('two.pdf',Buffer.from('%PDF-synthetic'));
-   const result=await run('a',[{type:'text',text:'read both'},{type:'file',attachment:txt},{type:'file',attachment:pdf}]);
+   const result=await run('a',[{type:'text',text:'read both'},{type:'file',attachment:txt},{type:'file',attachment:pdf}],undefined,[],true);
    assert.equal(result.finish.reason.kind,'stop');assert.equal(uploads.length,2);
+   assert.deepEqual(wire.at(-1).shanghaitech,stepFlags,'Loop options survive the SDK file projection');
    assert(wire.at(-1).messages[0].content.filter(p=>p.type==='file').length===2);
    assert(uploads.every(u=>u.conversation===conversationId('a')));
    assert.equal(result.options.messages[0].content[1].type,'file','Frozen durable history remains typed');
@@ -54,6 +57,7 @@ async function main(){
    await run('local',[{type:'text',text:'@local.txt read it with read'},{type:'text',text:core.fileRequestText(txt)}]);
    await run('local',[{type:'file',attachment:txt}],{kind:'file-reference'});
    assert.equal(uploads.length,before,'@paths and forged handles never upload');
+   assert.deepEqual(wire.at(-1).shanghaitech,{search:false,thinking:false},'An unmarked call resolves its own options');
    const gif=ref('animated.gif',Buffer.from('GIF89a\x01\0\x01\0','binary'));
    await run('gif',[{type:'file',attachment:gif}]);assert.equal(uploads.at(-1).mime,'image/gif');assert(uploads.at(-1).bytes.equals(sources.get(gif.attachmentId)));
    await Promise.all([run('parallel-a',[{type:'file',attachment:txt}]),run('parallel-b',[{type:'file',attachment:pdf}])]);

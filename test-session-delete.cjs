@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {SessionDeletion,checkedDirectory,RECORD}=require('./session-delete.cjs');
 const {conversationId}=require('./gateway-contract.cjs');
+const {OptionsHost}=require('./host.cjs');
 async function fixture(){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'dsh-delete-synthetic-'));
  const logs=new Map(),writers=new Map(),entries=new Map(),agents=new Map(),calls=[],removed=[];
@@ -23,7 +24,7 @@ async function fixture(){
   sessionQuery:{readSession:async id=>logs.get(id),searchSessions:async()=>{reconciled++;return {items:[]};}},
   workspaceRegistry:{list:()=>[{get sessionIds(){return [...membership];},detachSession:async id=>membership.delete(id)}],unpinSession:async()=>{},unarchiveSession:async()=>{}},emit:(name,id)=>removed.push(name+':'+id)};
  const host={ctx,snapshots:new Map(),headers:async()=>({Authorization:'Bearer synthetic'}),fetch:async(url,init)=>{calls.push({url,init});return Response.json({deleted:true,deleted_groups:2,scope:'upstream_history_and_gateway_mapping'});}};
- return {root,logs,ctx,host,calls,removed,membership,get reconciled(){return reconciled;},deletion:new SessionDeletion(host),cleanup:()=>fs.rm(root,{recursive:true,force:true})};
+ return {root,logs,ctx,host,calls,removed,membership,get reconciled(){return reconciled;},deletion:new SessionDeletion(host, '0.2.2-rc.1'),cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
 test('permanent local + website deletion removes subtree, preserves sibling and reconciles index',async()=>{
  const f=await fixture();try{
@@ -51,6 +52,9 @@ test('active child, subagent direct delete and unsupported storage fail before s
  const f=await fixture();try{
   f.ctx.agents.get('child').status='running';await assert.rejects(f.deletion.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/session-busy');
   f.ctx.agents.get('child').status='idle';await assert.rejects(f.deletion.remove({sessionId:'child',deleteWebsite:true}),e=>e.code==='shanghaitech/subagent-owned');
+  const unverified=new SessionDeletion(f.host,'0.2.2-rc.2');
+  await assert.rejects(unverified.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/delete-unsupported');
+  assert.equal(f.calls.length,0);
   delete f.ctx.sessionPersistence.acquireLease;await assert.rejects(f.deletion.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/delete-unsupported');assert.equal(f.calls.length,0);assert.equal(f.removed.length,0);
  }finally{await f.cleanup();}
 });
@@ -87,5 +91,22 @@ test('local cleanup error preserves confirmed website progress without leaking b
    assert.equal(error.deletionProgress.local_logs_removed,0);assert(!error.message.includes('private'));return true;
   });
   assert.equal(f.calls.length,1);assert((await fs.stat(path.join(f.root,'project','parent'))).isDirectory());
+ }finally{await f.cleanup();}
+});
+
+test('menu eligibility reads only the target session and checks provider and storage', async()=>{
+ const f=await fixture();try{
+  const host=new OptionsHost(f.ctx,()=>{});
+  const deletion=new SessionDeletion(host,'0.2.2-rc.1');
+  const selected=provider=>({type:'model/selection',data:{provider,model:'test-model'}});
+  f.logs.get('parent').events.push(selected('shanghaitech-genai'));
+  f.logs.get('child').events.push(selected('shanghaitech-genai'));
+  f.logs.get('sibling').events.push(selected('other-provider'));
+  assert.equal((await deletion.eligibility({sessionId:'parent'})).eligible,true);
+  assert.equal((await deletion.eligibility({sessionId:'child'})).eligible,false);
+  assert.equal((await deletion.eligibility({sessionId:'sibling'})).eligible,false);
+  const unsupported=new SessionDeletion(host,'0.2.2-rc.2');
+  assert.equal((await unsupported.eligibility({sessionId:'parent'})).eligible,false);
+  assert.equal(f.membership.size,3);assert.equal(f.removed.length,0);assert.equal(f.calls.length,0);
  }finally{await f.cleanup();}
 });

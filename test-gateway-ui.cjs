@@ -13,9 +13,9 @@ async function main(){
   useRef(initial){const i=at++;return values[i]??=( {current:initial} );},useId(){return 'field-'+at++;},
   useEffect(fn){if(!mounted)effects.push(fn);}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'client.js'),'utf8'),{AbortController,window:{__ModuleLoader__:{load(row){plugin=row.factory(n=>n==='react'?React:{});}}}});
- plugin.apply({effect:()=>{},locale:{register:(_n,v)=>{labels=v;}},slots:{inject:(_n,fn)=>fn(),register:(row,view)=>{if(row.name==='plugins.bundle.config')component=view;}}});
+ plugin.apply({inject:()=>{},effect:()=>{},locale:{register:(_n,v)=>{labels=v;}},slots:{inject:(_n,fn)=>fn(),register:(row,view)=>{if(row.name==='plugins.bundle.config')component=view;}}});
  // Locale registration is an effect; obtain it without instantiating session controllers.
- plugin.apply({effect:fn=>fn(),locale:{register:(_n,v)=>{labels=v;return()=>{};}},slots:{inject:(_n,fn)=>fn(),register:(row,view)=>{if(row.name==='plugins.bundle.config')component=view;}}});
+ plugin.apply({inject:()=>{},effect:fn=>fn(),locale:{register:(_n,v)=>{labels=v;return()=>{};}},slots:{inject:(_n,fn)=>fn(),register:(row,view)=>{if(row.name==='plugins.bundle.config')component=view;}}});
  const props={t:k=>labels.en[k],rpc:async(action,payload)=>({ok:true,value:await settings[action](payload)})};
  function render(){at=0;return component(props);}
  function all(node){return node&&typeof node==='object'?[node,...node.children.flat(Infinity).flatMap(all)]:[];}

@@ -1,5 +1,3 @@
 - insert:
     - id: shanghaitech-gateway-options
       name: 'dsh-shanghaitech-genai'
-    - id: shanghaitech-genai-agent
-      name: 'dsh-shanghaitech-genai/agent-preset'

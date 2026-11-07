@@ -11,8 +11,8 @@ async function main(){
  const llm=sdk('@deepseek-ai/dsh-llm');
  const root=new Context();
  try{
-  await root.plugin(sdk('@deepseek-ai/dsh-agent').AgentRegistry).await();
   await root.plugin(SessionProjectionRegistry).await();
+  await root.plugin(sdk('@deepseek-ai/dsh-agent').AgentRegistry).await();
   await root.plugin(sdk('@deepseek-ai/dsh-llm-retry')).await();
   const session=Session.create('native-retry-probe'),agent={session};
   const policy=createAdapter(llm,{},{}).providerRetryPolicy();

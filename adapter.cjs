@@ -1,7 +1,7 @@
 'use strict';
 const {PROVIDER}=require('./host.cjs');
 const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
-const {uploadedFilePart}=require('./attachment-routing.cjs');
+const {uploadedFilePart,requestStepOptions}=require('./attachment-routing.cjs');
 const {conversationId,usageOf,collectMetadata,sourceText,replayState}=require('./gateway-contract.cjs');
 // Configured context capacities; retain the existing fallback for other models.
 // The native dsh-llm-retry plugin owns backoff, cancellation and UI state.
@@ -89,9 +89,7 @@ function createAdapter(llm,host,ctx) {
     async *stream(options) {
       for(const field of ['temperature','stop','reasoningEffort'])if(options[field]!==undefined)throw new LlmError('Unsupported option: '+field,'UNSUPPORTED_OPTION');
       const connection=await gatewayConnection(ctx.credentials ?? host.ctx?.credentials);
-      // The agent/request waterfall owns the snapshot for a running step.
-      const held=options.sessionId && host.snapshots.get(options.sessionId);
-      const flags=held?.model===options.model && (!llm.isAgentLoopRequest || llm.isAgentLoopRequest(options))?held.value:await host.snapshot(options.sessionId,options.model,options.signal,connection);
+      const flags = requestStepOptions() ?? await host.snapshot(options.sessionId, options.model, options.signal, connection);
       const controller=new AbortController();
       const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(330000),...(options.signal?[options.signal]:[])]);
       try {
