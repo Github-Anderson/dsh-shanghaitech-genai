@@ -13,7 +13,7 @@ const DOCUMENT_TYPES={'.pdf':'application/pdf','.txt':'text/plain','.csv':'text/
 
 // Capture typed references before DSH unconditionally projects them to text.
 // Never infer filesystem access from model/user text that resembles a handle.
-function installAttachmentRouting(ctx) {
+function installAttachmentRouting(ctx, stepOptions = () => undefined) {
   ctx.on('llm/stream',(options,next)=>{
     if(options.provider!=='shanghaitech-genai')return next();
     const handles=new Map();
@@ -23,18 +23,22 @@ function installAttachmentRouting(ctx) {
       if(message.role==='user'&&message.source?.kind==='user'&&block.type==='file')
         handles.set(message.id+':'+index,{ref:block.attachment,text:ctx.llm.fileRequestText(block.attachment)});
     }
-    if(!handles.size)return next();
+    const flags = stepOptions(options);
+    if (!handles.size && !flags && !requests.getStore()) return next();
+    // Read the main-loop marker before the SDK projects the request into a
+    // different object. Carry the step options with the typed file receipts.
+    const request = {handles, flags};
     return (async function*(){
-      const iterator=next()[Symbol.asyncIterator]();
+      const iterator=requests.run(request,()=>next()[Symbol.asyncIterator]());
       try {
-        while(true){const item=await requests.run(handles,()=>iterator.next());if(item.done)return;yield item.value;}
-      }finally{await requests.run(handles,()=>iterator.return?.());}
+        while(true){const item=await requests.run(request,()=>iterator.next());if(item.done)return;yield item.value;}
+      }finally{await requests.run(request,()=>iterator.return?.());}
     })();
   });
 }
 
 async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,connection) {
-  const entry=requests.getStore()?.get(message?.id+':'+index);
+  const entry=requests.getStore()?.handles.get(message?.id+':'+index);
   if(!entry||entry.text!==text)return null;
   const ref=entry.ref;
   const suffix=require('node:path').extname(ref.name??'').toLowerCase();
@@ -81,4 +85,4 @@ async function uploadedFilePart(text,options,ctx,ErrorType=Error,message,index,c
     throw new ErrorType('Gateway returned invalid attachment metadata.','ATTACHMENT_UPLOAD_FAILED');
   return {type:'file',file:{file_id:result.id}};
 }
-module.exports={installAttachmentRouting,uploadedFilePart};
+module.exports={installAttachmentRouting,uploadedFilePart,requestStepOptions: () => requests.getStore()?.flags};

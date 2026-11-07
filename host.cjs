@@ -24,7 +24,7 @@ function fold(events, model) {
 class OptionsHost {
   constructor(ctx, append, attribution = () => ({}), fetchImpl = fetch) {
     this.ctx=ctx; this.append=append; this.attribution=attribution; this.fetch=fetchImpl;
-    this.locks=new Map(); this.snapshots=new Map(); this.capabilityCache=null;
+    this.locks=new Map(); this.steps=new WeakMap(); this.capabilityCache=null;
     this.optionResets=new Map(); this.viewSearch=false;
   }
   async headers(connection) {
@@ -50,7 +50,7 @@ class OptionsHost {
     signal?.throwIfAborted();
     const entry=caps.models.find(m=>m.id===model); if(!entry) fail('Model is not in the gateway catalog.');
     let {selected,saved}=fold(log.events,model);
-    selected ??= this.ctx.agentDefaultModel?.currentSelection();
+    selected = this.ctx.agents?.get(sessionId)?.model?.current() ?? selected ?? this.ctx.agentDefaultModel?.currentSelection();
     const reset=this.optionResets.get(sessionId);
     if(reset && (saved?.revision??0)<=reset.revision)saved={...saved,search:reset.search,thinking:false};
     const flags=[entry.search.default,entry.thinking.default];
@@ -61,7 +61,6 @@ class OptionsHost {
     if(state.session.origin==='subagent')fail('Subagent options are owned by its parent.');
     if(payload.activate===true) {
       this.optionResets.set(payload.sessionId,{revision:state.revision,search:this.viewSearch});
-      this.snapshots.delete(payload.sessionId);
       state=await this.state(payload.sessionId,payload.model,signal);
     }
     const {selected,session,...publicState}=state; return publicState;
@@ -81,15 +80,14 @@ class OptionsHost {
       if(current.revision!==payload.expectedRevision) fail('Options changed in another view. Reload and retry.','shanghaitech/revision-conflict');
       const cap=current.capabilities.models.find(m=>m.id===payload.model);
       if(payload.search&&!cap.search.supported || payload.thinking&&!cap.thinking.supported) fail('This model does not support the selected option.');
-      // Use the public command on every explicit save: it acquires/resumes the
-      // normal Agent writer and clears the obsolete effort from native selection.
-      // Read legacy flags above before removing that carrier.
-      await this.ctx.sessionController.selectModel({sessionId:key,provider:PROVIDER,model:payload.model});
-      const live=this.ctx.sessions.get(key);
-      if(!live) fail('Open this conversation before changing options.');
+      // Resolve the Host-owned writer without the model picker's profile default update.
+      const resolved = await this.ctx.sessionController.resolveAgent(key);
+      if ('error' in resolved) throw resolved.error;
       const admitted=await this.state(key,payload.model,signal);
       if(admitted.selected?.provider!==PROVIDER || admitted.selected.model!==payload.model) fail('The selected model changed. Reload its options.','shanghaitech/model-changed');
       if(admitted.revision!==current.revision) fail('Options changed while acquiring the session writer. Reload and retry.','shanghaitech/revision-conflict');
+      const live=this.ctx.sessions.get(key);
+      if(!live) fail('Open this conversation before changing options.');
       signal?.throwIfAborted();
       this.append(live,RECORD,{version:1,model:payload.model,search:payload.search,thinking:payload.thinking,revision:current.revision+1});
       try {if(!await this.ctx.sessions.flush(live)) fail('No session persistence writer is available.','shanghaitech/persistence-unavailable');}
@@ -119,9 +117,13 @@ class OptionsHost {
     if(live && !await this.ctx.sessions.flush(live))fail('Options cannot be persisted.');
     return Object.freeze(snapshot);
   }
-  install() {
+  stepOptions({sessionId, model, signal}) {
+    const step = this.steps.get(signal);
+    return step && step.sessionId === sessionId && step.model === model ? step.flags : undefined;
+  }
+  install(runtimeVersion) {
     const {SessionDeletion}=require('./session-delete.cjs');
-    this.deletion=new SessionDeletion(this);
+    this.deletion=new SessionDeletion(this, runtimeVersion);
     this.trackConversation=(...args)=>this.deletion.track(...args);
     this.deletion.install();
     for(const action of ['get','set']) {
@@ -136,13 +138,42 @@ class OptionsHost {
         }catch(e){return Response.json({type:'server-response',rpcId:envelope?.rpcId ?? 'invalid-request',result:{ok:false,error:{code:e.code||'shanghaitech/unavailable',message:e.code?e.message:'Options could not be loaded or saved. Check the gateway and session writer.',details:{}}}});}
       }}),'ShanghaiTech GenAI options '+action);
     }
-    this.ctx.on('agent/request',async({agent,signal},next)=>{
-      const config=await next(); if(config.provider!==PROVIDER)return config;
-      const snapshot=await this.snapshot(agent.session.id,config.model,signal);
-      this.snapshots.set(agent.session.id,{model:config.model,value:snapshot});
-      const {reasoningEffort,...clean}=config; return clean;
+    this.ctx.on('agent/created', ({agent, source, signal}) => {
+      if (source !== 'resume' || !agent.model) return;
+      const current = agent.model.current();
+      if (current?.provider !== PROVIDER || current.reasoningEffort === undefined) return;
+      const {selected} = fold(agent.session.snapshotEvents(), current.model);
+      if (selected?.provider !== PROVIDER || selected.model !== current.model ||
+          selected.reasoningEffort !== current.reasoningEffort) return;
+      signal?.throwIfAborted();
+      // This adapter has never offered a native effort. Remove the persisted
+      // legacy carrier before the restored Agent can prepare its first step.
+      agent.model.select({provider: current.provider, model: current.model});
     });
-    this.ctx.on('session/disposed',session=>{this.snapshots.delete(session.id);this.optionResets.delete(session.id);});
+    this.ctx.on('agent/pre-step', async ({agent, modelSelection, signal}, next) => {
+      const sessionId = agent.session.id;
+      this.deletion.assertNotDeleting(sessionId);
+      this.steps.delete(signal);
+      const decision = await next();
+      if (decision.kind !== 'enter') return decision;
+      const selection = modelSelection ?? agent.model?.current() ?? agent.options;
+      if (selection?.provider === PROVIDER) {
+        const flags = await this.snapshot(sessionId, selection.model, signal);
+        this.steps.set(signal, {sessionId, model: selection.model, flags});
+      }
+      return decision;
+    });
+    // The 0.2.1 RCs have no Agent.model. Their request hook is the only
+    // existing path for stripping an effort before the old LLM validator.
+    if (/^0\.2\.1-rc\.[2-5]$/.test(runtimeVersion)) {
+      this.ctx.on('agent/request', async (_event, next) => {
+        const config = await next();
+        if (config.provider !== PROVIDER || config.reasoningEffort === undefined) return config;
+        const {reasoningEffort, ...selection} = config;
+        return selection;
+      });
+    }
+    this.ctx.on('session/disposed', session => this.optionResets.delete(session.id));
   }
 }
 module.exports={OptionsHost,fold,BASE,PROVIDER,RECORD};

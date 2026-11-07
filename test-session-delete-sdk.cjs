@@ -15,7 +15,9 @@ async function scenario(openAt){
  const ctx=new Context();
  try{
   await fs.mkdir(path.join(root,'logs'));
-  await ctx.plugin(SessionStore).await();await ctx.plugin(AgentRegistry).await();
+  await ctx.plugin(SessionStore).await();
+  await ctx.plugin(shipped('@deepseek-ai/dsh-session-projection').SessionProjectionRegistry).await();
+  await ctx.plugin(AgentRegistry).await();
   const provider=ctx.plugin(persistence,{root:path.join(root,'logs'),compression:'zstd',listConcurrency:3});await provider.await();
   const backend=ctx.sessionPersistence;
   assert.equal(typeof backend.acquireLease,'function');assert(backend.tracker.writers);
@@ -36,7 +38,7 @@ async function scenario(openAt){
   assert.equal(session.snapshotEvents().filter(e=>e.type===RECORD).length,1);
   assert.equal(session.snapshotEvents().at(-1).ignorable,true);
   const directory=await checkedDirectory(backend,header);assert((await fs.stat(directory)).isDirectory());
-  const deletion=new SessionDeletion({ctx,snapshots:new Map()});
+  const deletion=new SessionDeletion({ctx}, shipped('@deepseek-ai/dsh-session/package.json').version);
   if(openAt==='never')await assert.rejects(ctx.sessionQuery.searchSessions({query:'synthetic',limit:1}),e=>e.code==='SESSION_QUERY_SEARCH_DISABLED');
   else {
     await assert.rejects(ctx.sessionQuery.searchSessions({limit:1}),e=>e.code==='SESSION_QUERY_INVALID_QUERY');

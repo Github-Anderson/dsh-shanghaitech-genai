@@ -23,7 +23,7 @@ async function fixture(){
   sessionQuery:{readSession:async id=>logs.get(id),searchSessions:async()=>{reconciled++;return {items:[]};}},
   workspaceRegistry:{list:()=>[{get sessionIds(){return [...membership];},detachSession:async id=>membership.delete(id)}],unpinSession:async()=>{},unarchiveSession:async()=>{}},emit:(name,id)=>removed.push(name+':'+id)};
  const host={ctx,snapshots:new Map(),headers:async()=>({Authorization:'Bearer synthetic'}),fetch:async(url,init)=>{calls.push({url,init});return Response.json({deleted:true,deleted_groups:2,scope:'upstream_history_and_gateway_mapping'});}};
- return {root,logs,ctx,host,calls,removed,membership,get reconciled(){return reconciled;},deletion:new SessionDeletion(host),cleanup:()=>fs.rm(root,{recursive:true,force:true})};
+ return {root,logs,ctx,host,calls,removed,membership,get reconciled(){return reconciled;},deletion:new SessionDeletion(host, '0.2.2-rc.1'),cleanup:()=>fs.rm(root,{recursive:true,force:true})};
 }
 test('permanent local + website deletion removes subtree, preserves sibling and reconciles index',async()=>{
  const f=await fixture();try{
@@ -51,6 +51,9 @@ test('active child, subagent direct delete and unsupported storage fail before s
  const f=await fixture();try{
   f.ctx.agents.get('child').status='running';await assert.rejects(f.deletion.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/session-busy');
   f.ctx.agents.get('child').status='idle';await assert.rejects(f.deletion.remove({sessionId:'child',deleteWebsite:true}),e=>e.code==='shanghaitech/subagent-owned');
+  const unverified=new SessionDeletion(f.host,'0.2.2-rc.2');
+  await assert.rejects(unverified.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/delete-unsupported');
+  assert.equal(f.calls.length,0);
   delete f.ctx.sessionPersistence.acquireLease;await assert.rejects(f.deletion.remove({sessionId:'parent',deleteWebsite:true}),e=>e.code==='shanghaitech/delete-unsupported');assert.equal(f.calls.length,0);assert.equal(f.removed.length,0);
  }finally{await f.cleanup();}
 });
