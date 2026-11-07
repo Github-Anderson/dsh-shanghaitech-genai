@@ -1,12 +1,12 @@
 # ShanghaiTech GenAI Plugin
 
-`dsh-shanghaitech-genai@1.1.0`，用于 **DSH Desktop ≥ 0.2.1-rc.2**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
+`dsh-shanghaitech-genai@1.1.0`，用于 **DSH Desktop ≥ 0.2.2-rc.1**。配套本地网关与部署脚本见 [ShanghaiTech-GenAI](https://github.com/Github-Anderson/ShanghaiTech-GenAI)。
 
 ## 功能
 
 在 DSH 的 Standard 预设中使用 ShanghaiTech GenAI 模型来源（provider ID 为 `shanghaitech-genai`）。支持独立 Search/Thinking 选项、网站附件、来源与 usage。
 
-按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。可用模型和能力来自网关读取的网站配置，当前全部聊天模型都有 Search，除 Qwen 外均有 Thinking。新建、切换模型或恢复会话时关闭 Thinking，Search 保留当前选择。网站搜索进度、来源、用量和响应标识随同一次请求接收。
+输入区显示“联网搜索 / 深度思考”或“Search / Thinking”，在输入框的“+”菜单中选择“网页附件 / Website attachments”。可用模型和能力来自网关读取的网站配置，当前全部聊天模型都有 Search，除 Qwen 外均有 Thinking。新建、切换模型或恢复会话时关闭 Thinking，Search 保留当前选择。网站搜索进度、来源、用量和响应标识随同一次请求接收。
 
 网页附件接受 PNG、JPEG、WebP、GIF 图片，以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON 文档，单文件均严格小于 10 MiB。网关按网站参数压缩大图，GIF 保留原文件；文档需由网站提取文字，扫描件不提供 OCR 回退。
 
@@ -16,11 +16,11 @@
 
 ## 删除会话
 
-输入区的“删除会话 / Delete session”会显示独立确认，默认勾选“同时删除网站历史 / Also delete website history”。确认后永久删除当前本地会话及其子代理，并清理工作区记录；不删除工作区文件或独立分叉。
+在侧栏会话行的“⋯”或右键菜单中选择“删除会话 / Delete session”后会显示独立确认，默认勾选“同时删除网站历史 / Also delete website history”。确认后永久删除当前本地会话及其子代理，并清理工作区记录；不删除工作区文件或独立分叉。
 
 同步网站历史时，网站确认成功后才删除本地会话。旧会话缺少上游映射或登录令牌已变更时，请到网站清理历史，或明确取消勾选，仅删除本地会话。生成中或有待处理工作的会话须先停止。
 
-兼容 DSH 默认关闭的全文搜索；已完成删除后的搜索索引刷新异常只显示警告，不再误报为整体失败。永久删除适用于 DSH 0.2.1-rc.5、0.2.2-rc.1 的 JSONL 存储。其他宿主版本仍可使用 DSH 自带的归档入口。更新后请完全退出 DSH，包括 Windows 托盘后台或 macOS 后台进程，再重新打开。
+兼容 DSH 默认关闭的全文搜索；已完成删除后的搜索索引刷新异常只显示警告，不再误报为整体失败。永久删除适用于已验证的 DSH 0.2.2-rc.1 JSONL 存储。更新后请完全退出 DSH，包括 Windows 托盘后台或 macOS 后台进程，再重新打开。
 
 ## 安装
 
@@ -97,7 +97,7 @@ npm pack --dry-run
 
 macOS 运行离线检查时设置 `TMPDIR=/private/tmp`，避免系统临时目录符号链接触发路径防护；Node 需满足 `package.json` 的版本要求，也可使用 DSH 应用内置 Node/pnpm。`npm test` 在隔离的 DSH 数据目录中运行离线回归检查，使用合成数据和模拟响应。`test-*-sdk.cjs`、`test-sdk.cjs` 与 `test-command.cjs` 用于已安装 DSH SDK 的集成检查，需通过 DSH 的 Electron-as-Node 运行；相应文件中注明了 SDK 路径参数或 `DSH_TEST_SDK_ROOT` 环境变量。
 
-当前源码声明支持 DSH ≥ 0.2.1-rc.2，不设版本上限；不再将 SDK 检查锁定到某个 rc 版本，各 SDK 包仍需版本一致。Git 标签安装仍使用已发布版本；本地验证当前未发布修改时，按配套仓库 `tools/README.md` 先同步再部署。
+当前源码声明支持 DSH ≥ 0.2.2-rc.1，不设版本上限；不再将 SDK 检查锁定到某个 rc 版本，各 SDK 包仍需版本一致。Git 标签安装仍使用已发布版本；本地验证当前未发布修改时，按配套仓库 `tools/README.md` 先同步再部署。
 
 `test-live-sdk.cjs` 是手动启用的本机联调：设置 `GENAI_LIVE_TEST=1`、开发 `DSH_HOME`、`DSH_TEST_SDK_ROOT` 和指向开发 profile 已安装插件的 `DSH_TEST_PLUGIN_ROOT`，通过 Electron-as-Node 执行。默认测试 Qwen，可用 `GENAI_TEST_MODEL` 指定其他非 GPT 模型；验证真实流式及工具往返，工具结果为模拟值，结束后删除测试网站会话。
 

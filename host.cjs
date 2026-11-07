@@ -44,13 +44,19 @@ class OptionsHost {
        value.usage?.stream_opt_in!=='stream_options.include_usage') fail('Rebuild the Docker gateway with conversation, source and usage support.','shanghaitech/protocol-mismatch');
     this.capabilityCache={time:Date.now(),value,baseUrl,revision:connection?.revision}; return value;
   }
+  selectedModel(sessionId, selected) {
+    return this.ctx.agents?.get(sessionId)?.model?.current() ?? selected;
+  }
+  isShanghaiTechSession(sessionId, events) {
+    return this.selectedModel(sessionId, fold(events).selected)?.provider === PROVIDER;
+  }
   async state(sessionId, model, signal, connection) {
     identity(sessionId,model);
     const [caps, log]=await Promise.all([this.capabilities(signal,connection),this.ctx.sessionQuery.readSession(sessionId)]);
     signal?.throwIfAborted();
     const entry=caps.models.find(m=>m.id===model); if(!entry) fail('Model is not in the gateway catalog.');
     let {selected,saved}=fold(log.events,model);
-    selected = this.ctx.agents?.get(sessionId)?.model?.current() ?? selected ?? this.ctx.agentDefaultModel?.currentSelection();
+    selected = this.selectedModel(sessionId, selected) ?? this.ctx.agentDefaultModel?.currentSelection();
     const reset=this.optionResets.get(sessionId);
     if(reset && (saved?.revision??0)<=reset.revision)saved={...saved,search:reset.search,thinking:false};
     const flags=[entry.search.default,entry.thinking.default];
@@ -139,7 +145,7 @@ class OptionsHost {
       }}),'ShanghaiTech GenAI options '+action);
     }
     this.ctx.on('agent/created', ({agent, source, signal}) => {
-      if (source !== 'resume' || !agent.model) return;
+      if (source !== 'resume') return;
       const current = agent.model.current();
       if (current?.provider !== PROVIDER || current.reasoningEffort === undefined) return;
       const {selected} = fold(agent.session.snapshotEvents(), current.model);
@@ -156,23 +162,13 @@ class OptionsHost {
       this.steps.delete(signal);
       const decision = await next();
       if (decision.kind !== 'enter') return decision;
-      const selection = modelSelection ?? agent.model?.current() ?? agent.options;
+      const selection = modelSelection ?? agent.model.current();
       if (selection?.provider === PROVIDER) {
         const flags = await this.snapshot(sessionId, selection.model, signal);
         this.steps.set(signal, {sessionId, model: selection.model, flags});
       }
       return decision;
     });
-    // The 0.2.1 RCs have no Agent.model. Their request hook is the only
-    // existing path for stripping an effort before the old LLM validator.
-    if (/^0\.2\.1-rc\.[2-5]$/.test(runtimeVersion)) {
-      this.ctx.on('agent/request', async (_event, next) => {
-        const config = await next();
-        if (config.provider !== PROVIDER || config.reasoningEffort === undefined) return config;
-        const {reasoningEffort, ...selection} = config;
-        return selection;
-      });
-    }
     this.ctx.on('session/disposed', session => this.optionResets.delete(session.id));
   }
 }

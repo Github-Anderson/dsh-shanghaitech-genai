@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {SessionDeletion,checkedDirectory,RECORD}=require('./session-delete.cjs');
 const {conversationId}=require('./gateway-contract.cjs');
+const {OptionsHost}=require('./host.cjs');
 async function fixture(){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'dsh-delete-synthetic-'));
  const logs=new Map(),writers=new Map(),entries=new Map(),agents=new Map(),calls=[],removed=[];
@@ -90,5 +91,22 @@ test('local cleanup error preserves confirmed website progress without leaking b
    assert.equal(error.deletionProgress.local_logs_removed,0);assert(!error.message.includes('private'));return true;
   });
   assert.equal(f.calls.length,1);assert((await fs.stat(path.join(f.root,'project','parent'))).isDirectory());
+ }finally{await f.cleanup();}
+});
+
+test('menu eligibility reads only the target session and checks provider and storage', async()=>{
+ const f=await fixture();try{
+  const host=new OptionsHost(f.ctx,()=>{});
+  const deletion=new SessionDeletion(host,'0.2.2-rc.1');
+  const selected=provider=>({type:'model/selection',data:{provider,model:'test-model'}});
+  f.logs.get('parent').events.push(selected('shanghaitech-genai'));
+  f.logs.get('child').events.push(selected('shanghaitech-genai'));
+  f.logs.get('sibling').events.push(selected('other-provider'));
+  assert.equal((await deletion.eligibility({sessionId:'parent'})).eligible,true);
+  assert.equal((await deletion.eligibility({sessionId:'child'})).eligible,false);
+  assert.equal((await deletion.eligibility({sessionId:'sibling'})).eligible,false);
+  const unsupported=new SessionDeletion(host,'0.2.2-rc.2');
+  assert.equal((await unsupported.eligibility({sessionId:'parent'})).eligible,false);
+  assert.equal(f.membership.size,3);assert.equal(f.removed.length,0);assert.equal(f.calls.length,0);
  }finally{await f.cleanup();}
 });

@@ -34,7 +34,11 @@ async function main(){
   flush=false;await assert.rejects(host.set({sessionId:'s',model:'Kimi-k3',search:false,thinking:true,expectedRevision:2}));assert.equal((await host.get({sessionId:'s',model:'Kimi-k3'})).search,true);await assert.rejects(host.snapshot('s','Kimi-k3'));flush=true;
   assert.deepEqual(await host.snapshot('child','Kimi-k3'),{search:true,thinking:false});await assert.rejects(host.get({sessionId:'child',model:'Kimi-k3'}),/parent/);
   const restored=new OptionsHost(ctx,host.append,host.attribution,host.fetch);assert.equal((await restored.get({sessionId:'s',model:'Kimi-k3'})).revision,4);
-  host.install('0.2.2-rc.1');assert.equal(routes.length,3);
+  host.install('0.2.2-rc.1');
+  assert.deepEqual(routes.map(route=>route.path),[
+    '/api/shanghaitech.session.deleteEligibility','/api/shanghaitech.session.delete',
+    '/api/shanghaitech.options.get','/api/shanghaitech.options.set',
+  ]);
   assert.equal(listeners['agent/request'],undefined);
   const reply=await routes.find(row=>row.path==='/api/shanghaitech.options.get').fetch(new Request('http://local/api/shanghaitech.options.get',{method:'POST',body:JSON.stringify({type:'client-request',rpcId:'r',method:'shanghaitech.options.get',payload:{sessionId:'s',model:'Kimi-k3'}})}));assert.equal((await reply.json()).result.value.thinking,false);
   const route={provider:'shanghaitech-genai',model:'Kimi-k3'};
@@ -104,15 +108,6 @@ async function main(){
   await host.capabilities();await host.capabilities();assert.equal(catalogCalls.length,1);
   await adapter.listModels();assert.equal(catalogCalls.length,2);
   assert(catalogCalls.at(-1).endsWith('/capabilities?refresh=true'));
-  // The legacy runtime can clear only its own request effort. A future host
-  // must never inherit this behavior through the broad plugin engine range.
-  host.install('0.2.1-rc.5');
-  const oldHook=listeners['agent/request'];
-  assert.deepEqual(await oldHook({},async()=>Object.freeze(oldChoice)),route);
-  const native=Object.freeze({provider:'deepseek',model:'native',reasoningEffort:'high'});
-  assert.equal(await oldHook({},async()=>native),native);
-  assert.equal(await oldHook({},async()=>route),route);
-
   installAttachmentRouting(ctx, request=>request.main?host.stepOptions(request):undefined);
   events.push({type:'model/selection',data:route});
   const step={...options,signal,main:true};

@@ -22,7 +22,7 @@
   "main": "index.cjs",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2"
+    "dsh": ">=0.2.2-rc.1"
   },
   "scripts": {
     "test": "node --require ./test-environment.cjs --test test-session-delete.cjs test-contract.cjs test-credentials.cjs test-gateway-url.cjs test-private-gateway.cjs test-host.cjs test-images.cjs test-options.cjs test-gateway-settings.cjs test-gateway-ui.cjs"
@@ -65,8 +65,8 @@
     "gateway-settings.cjs"
   ],
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2",
-    "@deepseek-ai/dsh-session": ">=0.2.1-rc.2"
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-llm": {

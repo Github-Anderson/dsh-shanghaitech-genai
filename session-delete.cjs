@@ -39,9 +39,8 @@ async function checkedDirectory(backend,header){
   if(log.isSymbolicLink()||!log.isFile()||!/^session\.v\d+\.jsonl(?:\.zstd)?$/.test(path.basename(location.path)))fail('delete-path','Refusing an unsupported session artifact.');
   return directory;
 }
-const deletionRuntimes = new Set(['0.2.1-rc.5', '0.2.2-rc.1']);
 function supportsLocalDeletion(ctx, runtimeVersion) {
-  if (!deletionRuntimes.has(runtimeVersion)) return false;
+  if (runtimeVersion !== '0.2.2-rc.1') return false;
   const backend = ctx.sessionPersistence, registry = ctx.workspaceRegistry;
   return typeof backend?.locate === 'function' && typeof backend.acquireLease === 'function' &&
     typeof backend.root === 'string' && typeof backend.list === 'function' && typeof backend.tracker?.writers?.get === 'function' &&
@@ -74,6 +73,17 @@ class SessionDeletion {
   }
   async track(sessionId,conversation,signal){
     return recordConversation(this.ctx,this.host.append,sessionId,conversation,signal);
+  }
+  async eligibility(payload, signal) {
+    if (!payload || Object.keys(payload).length !== 1 || !valid(payload.sessionId)) {
+      fail('invalid-delete', 'Supply a session identity.');
+    }
+    const {sessionId} = payload;
+    if (!supportsLocalDeletion(this.ctx, this.runtimeVersion) || gates.has(sessionId)) return {eligible:false};
+    signal?.throwIfAborted();
+    const log = await this.ctx.sessionQuery.readSession(sessionId);
+    signal?.throwIfAborted();
+    return {eligible:log.session.origin !== 'subagent' && this.host.isShanghaiTechSession(sessionId, log.events)};
   }
   async remove(payload,signal){
     if(!payload||Object.keys(payload).some(k=>!['sessionId','deleteWebsite'].includes(k))||!valid(payload.sessionId)||typeof payload.deleteWebsite!=='boolean')fail('invalid-delete','Supply a session identity and explicit website-deletion choice.');
@@ -157,16 +167,30 @@ class SessionDeletion {
     }finally{for(const id of ids)gates.delete(id);}
   }
   install(){
-    const endpoint='shanghaitech.session.delete';
-    this.ctx.effect(()=>this.ctx.connection.fetch.register({path:'/api/'+endpoint,methods:['POST'],requestBody:'buffered',fetch:async request=>{
-      let envelope;
-      try {
-        const raw=await request.text();if(raw.length>4096)fail('invalid-delete','Deletion request is too large.');envelope=JSON.parse(raw);
-        if(envelope.type!=='client-request'||typeof envelope.rpcId!=='string'||envelope.method!==endpoint)fail('invalid-delete','Invalid deletion RPC.');
-        const value=await this.remove(envelope.payload,request.signal);
-        return Response.json({type:'server-response',rpcId:envelope.rpcId,result:{ok:true,value}});
-      }catch(e){return Response.json({type:'server-response',rpcId:envelope?.rpcId??'invalid-request',result:{ok:false,error:{code:e.code?.startsWith('shanghaitech/')?e.code:'shanghaitech/delete-failed',message:e.code?.startsWith('shanghaitech/')?e.message:'Deletion did not complete. Reload the session before retrying.',details:e.deletionProgress??{}}}});}
-    }}),'ShanghaiTech: permanent session deletion');
+    for (const [action, handle] of [['deleteEligibility', this.eligibility], ['delete', this.remove]]) {
+      const endpoint = 'shanghaitech.session.' + action;
+      this.ctx.effect(() => this.ctx.connection.fetch.register({
+        path:'/api/'+endpoint, methods:['POST'], requestBody:'buffered', fetch:async request => {
+          let envelope;
+          try {
+            const raw = await request.text();
+            if (raw.length > 4096) fail('invalid-delete', 'Deletion request is too large.');
+            envelope = JSON.parse(raw);
+            if (envelope.type !== 'client-request' || typeof envelope.rpcId !== 'string' || envelope.method !== endpoint) {
+              fail('invalid-delete', 'Invalid deletion RPC.');
+            }
+            const value = await handle.call(this, envelope.payload, request.signal);
+            return Response.json({type:'server-response', rpcId:envelope.rpcId, result:{ok:true, value}});
+          } catch (error) {
+            const known = error?.code?.startsWith('shanghaitech/');
+            const failure = {code:known ? error.code : 'shanghaitech/delete-failed',
+              message:known ? error.message : 'Could not complete the session operation.',
+              details:error.deletionProgress ?? {}};
+            return Response.json({type:'server-response', rpcId:envelope?.rpcId ?? 'invalid-request', result:{ok:false, error:failure}});
+          }
+        },
+      }), 'ShanghaiTech: session ' + action);
+    }
   }
 }
 module.exports={SessionDeletion,checkedDirectory,recordConversation,refreshDeletedSessionIndex,RECORD};
