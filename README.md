@@ -4,17 +4,15 @@
 
 ## 功能
 
-模型来源、Agent 预设及 provider ID 均为 `shanghaitech-genai`（界面显示 ShanghaiTech GenAI）。支持独立 Search/Thinking 选项、网站附件、来源与 usage，以及 Standard 原生工具和权限流程。PDF 文本工具名为 `shanghaitech_genai_read_pdf`。
+在 DSH 的 Standard 预设中使用 ShanghaiTech GenAI 模型来源（provider ID 为 `shanghaitech-genai`）。支持独立 Search/Thinking 选项、网站附件、来源与 usage。
 
 按钮随 DSH 语言显示为“联网搜索 / 深度思考 / 网页附件”或“Search / Thinking / Attachments”。可用模型和能力来自网关读取的网站配置，当前全部聊天模型都有 Search，除 Qwen 外均有 Thinking。新建、切换模型或恢复会话时关闭 Thinking，Search 保留当前选择。网站搜索进度、来源、用量和响应标识随同一次请求接收。
 
-网页附件接受 PNG、JPEG、WebP、GIF 图片，以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON 文档，单文件均严格小于 10 MiB。网关按网站参数压缩大图，GIF 保留原文件；文档需由网站提取文字，扫描件不提供 OCR 回退。独立 PDF 文本工具仍只处理 PDF。
+网页附件接受 PNG、JPEG、WebP、GIF 图片，以及 PDF、TXT、CSV、DOCX、XLS、XLSX、PPT、PPTX、HTML、HTM、MD、MARKDOWN、LOG、JSON 文档，单文件均严格小于 10 MiB。网关按网站参数压缩大图，GIF 保留原文件；文档需由网站提取文字，扫描件不提供 OCR 回退。
 
-## 批量子代理
+## 网关排队
 
-选择 ShanghaiTech GenAI 预设后，大批量独立委派使用 DSH 原生 `workflow`；原生工作流每次创建并运行一个子代理，其余任务在创建前等待。后台工作流使用 `job_output` 查看进度、`job_kill` 取消。少量委派继续使用 `subagent` / `subagent_fork`。
-
-工作流沿用 DSH 的总量限制和进程生命周期，不能跨重启自动恢复。其他预设的工作流配置保持不变。网关请求入队失败时，插件交给 DSH 原生重试机制最多退避重试 8 次；流中断、空响应和工具格式错误不在客户端自动重放。
+网关请求入队失败时，插件交给 DSH 原生重试机制最多退避重试 8 次。流中断、空响应和工具格式错误不在客户端自动重放。
 
 ## 删除会话
 
@@ -56,7 +54,7 @@ github:Github-Anderson/dsh-shanghaitech-genai#v1.1.0
 
 地址和密钥由 DSH 原生凭证库统一保存，后续新请求立即使用保存的值；正在进行的附件上传及聊天共用原连接。首次未保存时使用 DSH 凭证引用 `SHANGHAITECH_GENAI_API_KEY` 和默认本地地址。插件不再读取部署私有 JSON、`gateway.key`、旧详情页配置文件或地址环境变量。通过配套安装脚本升级时，首次自动将私有配置中的地址与密钥一起迁入原生凭证库；普通更新和启动保留已保存的连接，明确传入网关连接参数才替换。直接安装插件时可在详情页设置连接；旧文件保留。开发与日常 DSH 使用各自的凭证库。
 
-配置凭证后新建会话，选择 **ShanghaiTech GenAI** 预设与同名模型来源。网关的首次登录和凭证导入步骤见[配套安装指南](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/安装指南.md)。
+配置凭证后新建会话，选择 **Standard** 预设和 **ShanghaiTech GenAI** 模型来源。网关的首次登录和凭证导入步骤见[配套安装指南](https://github.com/Github-Anderson/ShanghaiTech-GenAI/blob/main/安装指南.md)。
 
 已配置 DSH CLI 的环境也可安装到指定 profile：
 
@@ -71,10 +69,9 @@ dsh plugin --profile <profile-name> add github:Github-Anderson/dsh-shanghaitech-
 本包按 [DeepSeek Harness 官方插件打包规范](https://deepseek-harness.github.io/deepseek-harness/en/develop/basic/publish)组织为 Bundle：
 
 - `package.json` 声明 `dsh.bundle.patch`、`dsh.client`、导出入口、发布文件和兼容版本。
-- `cordis.patch.yml` 挂载模型与会话选项插件，以及 Agent 预设插件。
+- `cordis.patch.yml` 挂载模型与会话选项插件。
 - `index.cjs` 导出 Cordis 插件的 `name`、`inject` 和 `apply`。
 - `client.js` 提供 DSH 客户端界面，`locale/` 提供中英文文本。
-- `agent-preset.cjs` 和 `pdf-reader.cjs` 提供 Agent 预设与 PDF 工具。
 
 ## macOS 隔离联调
 

@@ -7,7 +7,7 @@ if(!root)throw Error('Pass the installed DSH SDK directory.');
 const manifest=require('./package.json');
 const sdkVersion=require(path.join(root,'dsh-llm','package.json')).version;
 assert.equal(manifest.engines.dsh,'>=0.2.1-rc.2');
-for(const name of ['dsh-llm','dsh-session','dsh-agent-preset-registry']) {
+for(const name of ['dsh-llm','dsh-session']) {
   const installed=require(path.join(root,name,'package.json')).version;
   assert.equal(installed,sdkVersion,`Mixed DSH SDK versions (${name}).`);
   assert.equal(manifest.peerDependencies['@deepseek-ai/'+name],manifest.engines.dsh);

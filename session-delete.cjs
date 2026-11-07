@@ -3,9 +3,8 @@
 'use strict';
 const fs=require('node:fs/promises');
 const path=require('node:path');
-const {conversationId}=require('./gateway-contract.cjs');
+const {conversationId,readJson}=require('./gateway-contract.cjs');
 const {gatewayBaseUrl,gatewayConnection}=require('./gateway-url.cjs');
-const {readJson}=require('./pdf-reader.cjs');
 const RECORD='plugin:shanghaitech-genai/conversation';
 const gates=new Set();
 const recordLocks=new Map();

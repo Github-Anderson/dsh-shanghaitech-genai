@@ -1,6 +1,30 @@
 'use strict';
 const {createHash}=require('node:crypto');
 
+const MAX_REPLY_BYTES = 2 * 1024 * 1024;
+
+async function readJson(response, signal) {
+  if (!response.body) throw Error('Gateway returned no response body.');
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      signal?.throwIfAborted();
+      const {done, value} = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > MAX_REPLY_BYTES) throw Error('Gateway response exceeds the size limit.');
+      chunks.push(value);
+    }
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    catch { throw Error('Gateway returned invalid JSON.'); }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 function conversationId(sessionId, purpose='chat', documentDigest) {
   if (sessionId === undefined || sessionId === null) return undefined;
   if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 256) throw Error('Invalid DSH session identity.');
@@ -83,4 +107,4 @@ function replayState(state, model, conversation) {
   const response={kind:'shanghaitech',version:1,model,...conversation?{conversation_id:conversation}:{},...state};
   return {response};
 }
-module.exports={conversationId,usageOf,collectMetadata,sourceText,replayState};
+module.exports={readJson,conversationId,usageOf,collectMetadata,sourceText,replayState};
